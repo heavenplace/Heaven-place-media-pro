@@ -1,0 +1,14 @@
+{
+  "name": "streamcast-listener-app",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Android app for the StreamCast Pro listener side",
+  "dependencies": {
+    "@capacitor/android": "^7.0.0",
+    "@capacitor/core": "^7.0.0"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^7.0.0",
+    "typescript": "^5.6.0"
+  }
+}
