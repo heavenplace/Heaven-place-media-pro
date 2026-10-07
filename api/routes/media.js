@@ -32,6 +32,16 @@ router.get('/', async (req, res) => {
   res.json({ media: rows });
 });
 
+// Everything on the stations this user owns — including hidden items — for the
+// owner dashboard. Admins manage media from the control room instead.
+router.get('/mine', auth(), async (req, res) => {
+  const { rows } = await q(
+    `${SELECT} WHERE m.station_id IN (SELECT id FROM stations WHERE owner_id = $1) ORDER BY m.created_at DESC LIMIT 300`,
+    [req.user.id]
+  );
+  res.json({ media: rows });
+});
+
 router.post('/', auth(), async (req, res) => {
   const { station_id, type = 'audio', title, description = '', url, access = 'free', price_cents = 0, duration_seconds = 0, source = 'upload', downloadable = true } = req.body ?? {};
   if (!title || !url) return res.status(400).json({ error: 'A title and a file or link are required' });

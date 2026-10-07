@@ -76,6 +76,12 @@ key — a placeholder only makes the app start, it does not take money.
 - **Uploads** go to the `uploads` volume and are served from `/uploads/...`.
   Audio/video/image only, 500 MB per file. Phone recordings are captured with
   `MediaRecorder` in the browser and uploaded the same way (`FileDrop.jsx`).
+- **Station owners** get a dashboard at `/studio` (`web/src/pages/studio/`): a
+  per-station overview, media upload and management, live-window control (start,
+  extend +1 hour, end now) and station details. It reads the owner-scoped
+  `GET /api/stations/mine`, `GET /api/media/mine` (includes hidden items) and
+  `GET /api/live/mine` (active first); every write reuses the normal routes,
+  which scope themselves to the owner through `canManageStation`.
 - **Live** is a scheduled window over an existing item (`live_sessions.expires_at`),
   not a real-time broadcast relay. True camera/audio broadcast to many listeners
   needs a streaming service (e.g. an RTMP/HLS provider) — the live control screens

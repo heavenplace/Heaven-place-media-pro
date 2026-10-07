@@ -19,6 +19,16 @@ router.get('/', async (_req, res) => {
   res.json({ live: rows });
 });
 
+// Live windows on the stations this user owns, active first — the owner dashboard.
+router.get('/mine', auth(), async (req, res) => {
+  const { rows } = await q(
+    `${SELECT} WHERE l.station_id IN (SELECT id FROM stations WHERE owner_id = $1)
+     ORDER BY (l.status = 'live' AND l.expires_at > now()) DESC, l.started_at DESC LIMIT 100`,
+    [req.user.id]
+  );
+  res.json({ live: rows });
+});
+
 // Put an uploaded file (or a phone recording) on air for a set window.
 router.post('/', auth(), async (req, res) => {
   const { station_id, media_id, title, kind = 'audio', hours = 1 } = req.body ?? {};
