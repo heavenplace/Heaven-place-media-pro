@@ -28,11 +28,40 @@ The control-room account is created on first boot from `.env.base44-defaults`:
 Change those values (or the account, from the Users screen) for anything real.
 Everyone else registers from `/register`.
 
+## Configuration
+
+`GET /api/config` publishes what the web app needs on load (a Google client id is not
+a secret — it is visible in any page that uses it): `google_client_id`,
+`payments_enabled`, `premium_price_cents`. The web app reads it once through
+`web/src/config.js`, which is why the Google button and the card buttons appear only
+when the server is actually set up for them.
+
+| Variable | Needed for |
+| --- | --- |
+| `JWT_SECRET` | signing sessions — required, a dev placeholder is generated |
+| `GOOGLE_CLIENT_ID` | the Google sign-in button and the server-side token check |
+| `STRIPE_SECRET_KEY` | card checkout for Premium memberships and paid downloads |
+| `STRIPE_WEBHOOK_SECRET` | the Stripe webhook signature — optional |
+| `PREMIUM_PRICE_CENTS` | Premium price in cents (default `600`) |
+| `WEB_ORIGIN` | an extra origin allowed as a checkout return url, when not already in `CORS_ORIGIN` |
+
+Secrets arrive in `/run/base44/app.env` (outside the repo) and are listed last in the
+api service's `env_file`. The app boots without the Google and Stripe values: the
+sign-in page shows a hint where the button would be, and the Premium page falls back
+to the manual request flow. Card checkout also needs `STRIPE_SECRET_KEY` to be a real
+key — a placeholder only makes the app start, it does not take money.
+
 ## Things worth knowing
 
 - **Auth** is email + password, JWT bearer tokens, hashed with bcrypt.
-  Google sign-in is not wired: it needs an OAuth client id/secret. The button on the
-  sign-in page explains that rather than pretending to work.
+  Google sign-in uses the browser credential flow: the web app renders Google's own
+  button (`web/src/components/GoogleSignIn.jsx`) and posts the ID token it hands back
+  to `POST /api/auth/google`, which verifies it against the client id (`api/google.js`)
+  and links or creates the account by verified email. Accounts created this way get an
+  unguessable password hash, so the password form stays shut for them. Only
+  `GOOGLE_CLIENT_ID` is needed — no client secret, no redirect URI. The origin the
+  button is served from must be listed under "Authorized JavaScript origins" for that
+  client id in the Google console, or Google refuses to render the button.
 - **Uploads** go to the `uploads` volume and are served from `/uploads/...`.
   Audio/video/image only, 500 MB per file. Phone recordings are captured with
   `MediaRecorder` in the browser and uploaded the same way (`FileDrop.jsx`).
@@ -40,9 +69,16 @@ Everyone else registers from `/register`.
   not a real-time broadcast relay. True camera/audio broadcast to many listeners
   needs a streaming service (e.g. an RTMP/HLS provider) — the live control screens
   are ready to point at one.
-- **Payments** are request-based: a listener requests Premium or a paid download,
-  the control room approves, and the unlock is granted immediately. Real card
-  checkout needs a provider (e.g. Stripe) wired into `api/routes/requests.js`.
+- **Payments** run through Stripe Checkout once `STRIPE_SECRET_KEY` is set.
+  `POST /api/payments/checkout` opens a hosted session for a Premium membership
+  (monthly) or one paid download; access is granted by `POST /api/payments/confirm`
+  when the browser lands back on the success url, and by the
+  `POST /api/payments/webhook` webhook (`STRIPE_WEBHOOK_SECRET`) in a deployment that
+  can receive one. Both call the same idempotent `fulfil()` in `api/payments.js`, so a
+  payment confirmed twice still unlocks once. The webhook is mounted in `server.js`
+  BEFORE `express.json()` because the signature check needs the raw body — keep that
+  order. The manual request/approval flow is unchanged and is what the Premium page
+  falls back to when no Stripe key is set.
 - **Active listeners** is a 5-minute rolling count of `listen` activity rows;
   per-station stream time sums the live-session windows.
 - `SEED_DEMO=1` seeds demo stations with public sample media URLs, so the preview
@@ -66,4 +102,5 @@ Everyone else registers from `/register`.
 ```bash
 curl -s localhost:3000/ | head -5            # web serves the app shell
 curl -s localhost:8000/health                # {"ok":true,"service":"api"}
+curl -s localhost:8000/api/config            # which integrations are switched on
 ```
