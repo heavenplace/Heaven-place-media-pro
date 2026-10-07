@@ -175,3 +175,13 @@ curl -s localhost:3000/ | head -5            # web serves the app shell
 curl -s localhost:8000/health                # {"ok":true,"service":"api"}
 curl -s localhost:8000/api/config            # which integrations are switched on
 ```
+
+Test-harness pitfalls — these show up in the logs as alarming-looking errors but are
+the check script's fault, not the app's:
+
+- `psql` prints its command tag (`INSERT 0 1`) to stdout even with `-tA`, so
+  `id=$(psql -c "INSERT ... RETURNING id")` captures `<id>\nINSERT 0 1`. Take the first
+  line (`| head -n1`) — otherwise the tag leaks into the next SQL statement (syntax
+  error in the `db` log) and into JSON bodies (a body-parser 400 in the `api` log with
+  the tag quoted back at you).
+- `activity` has no `title` column; it is `type` + `detail`.
