@@ -1,13 +1,9 @@
-import { useAuth } from '../AuthContext.jsx';
-
 // The APKs are produced by `docker compose -f docker-compose.mobile.yml run --rm android`
 // and served from /downloads (see AGENTS.md).
 const LISTENER_APK = '/downloads/streamcast-listener-release.apk';
 const CONTROL_ROOM_APK = '/downloads/streamcast-admin-release.apk';
 
 export default function GetTheApp() {
-  const { isAdmin } = useAuth();
-
   return (
     <section className="panel between">
       <div>
@@ -22,13 +18,11 @@ export default function GetTheApp() {
       </div>
       <div className="row">
         <a className="btn btn-primary" href={LISTENER_APK} download>
-          Download for Android
+          Listener app
         </a>
-        {isAdmin && (
-          <a className="btn" href={CONTROL_ROOM_APK} download>
-            Control room app
-          </a>
-        )}
+        <a className="btn" href={CONTROL_ROOM_APK} download>
+          Admin app
+        </a>
       </div>
     </section>
   );
