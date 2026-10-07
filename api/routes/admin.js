@@ -66,21 +66,28 @@ router.get('/stations', async (req, res) => {
   res.json({ stations: rows });
 });
 
+// The content desk: rename, re-describe, reassign or retire a station.
 router.patch('/stations/:id', async (req, res) => {
-  const { status, verified } = req.body ?? {};
+  const { status, verified, name, kind, description, artwork_url, owner_id } = req.body ?? {};
   if (status && !['pending', 'approved', 'suspended'].includes(status)) {
     return res.status(400).json({ error: 'Unknown station status' });
   }
+  if (kind && !['radio', 'tv'].includes(kind)) return res.status(400).json({ error: 'Station type must be radio or tv' });
+  if (name !== undefined && !String(name).trim()) return res.status(400).json({ error: 'A station name is required' });
+
   const sets = [];
   const params = [];
-  if (status) {
-    params.push(status);
-    sets.push(`status = $${params.length}`);
-  }
-  if (verified !== undefined) {
-    params.push(Boolean(verified));
-    sets.push(`verified = $${params.length}`);
-  }
+  const add = (column, value) => {
+    params.push(value);
+    sets.push(`${column} = $${params.length}`);
+  };
+  if (name !== undefined) add('name', String(name).trim());
+  if (kind !== undefined) add('kind', kind);
+  if (description !== undefined) add('description', description);
+  if (artwork_url !== undefined) add('artwork_url', artwork_url);
+  if (owner_id !== undefined) add('owner_id', owner_id ? Number(owner_id) : null);
+  if (status) add('status', status);
+  if (verified !== undefined) add('verified', Boolean(verified));
   if (!sets.length) return res.status(400).json({ error: 'Nothing to update' });
   params.push(Number(req.params.id));
   const { rows } = await q(`UPDATE stations SET ${sets.join(', ')} WHERE id = $${params.length} RETURNING *`, params);

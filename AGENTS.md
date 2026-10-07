@@ -154,6 +154,10 @@ docker compose -f docker-compose.mobile.yml run --rm android
   request `Host` as `<port>-<sandbox id>.$BASE44_SANDBOX_HOST_DOMAIN`. Vite's
   allowed-host check is satisfied by `__VITE_ADDITIONAL_SERVER_ALLOWED_HOSTS`,
   which the platform sets rather than a permissive `allowedHosts` config.
+- The web dev server watches the bind-mounted source with `CHOKIDAR_USEPOLLING=true`
+  (in `docker-compose.base44.yml`): without polling, Vite keeps serving the module it
+  cached before the edit, so a change looks like it never applied. After a restart the
+  first page load can still be the previous bundle — reload the preview once.
 - `CORS_ORIGIN` allows `https://3000-${BASE44_PUBLIC_HOST_SUFFIX}` on the API so
   the API port can be called directly (webhooks/clients) as well as through the
   web proxy. It references the variable, never a resolved hostname.

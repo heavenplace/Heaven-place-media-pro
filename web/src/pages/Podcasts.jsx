@@ -12,7 +12,6 @@ export default function Podcasts() {
   const [selected, setSelected] = useState(null);
   const [episodes, setEpisodes] = useState([]);
   const [error, setError] = useState('');
-  const [newPodcast, setNewPodcast] = useState({ title: '', description: '', artwork_url: '' });
   const [episode, setEpisode] = useState({ title: '', description: '', url: '', duration_seconds: 0 });
   const [live, setLive] = useState([]);
 
@@ -27,18 +26,6 @@ export default function Podcasts() {
     setSelected(podcast);
     const data = await api(`/podcasts/${podcast.id}`);
     setEpisodes(data.episodes);
-  };
-
-  const createPodcast = async (event) => {
-    event.preventDefault();
-    setError('');
-    try {
-      await api('/podcasts', { method: 'POST', body: newPodcast });
-      setNewPodcast({ title: '', description: '', artwork_url: '' });
-      loadList();
-    } catch (err) {
-      setError(err.message);
-    }
   };
 
   const addEpisode = async (event) => {
@@ -174,26 +161,6 @@ export default function Podcasts() {
         </section>
       )}
 
-      {user && (
-        <form className="panel stack" onSubmit={createPodcast}>
-          <h3>Start a podcast</h3>
-          <div className="row">
-            <div className="grow">
-              <label>Title</label>
-              <input value={newPodcast.title} onChange={(event) => setNewPodcast({ ...newPodcast, title: event.target.value })} required />
-            </div>
-            <div className="grow">
-              <label>Description</label>
-              <input value={newPodcast.description} onChange={(event) => setNewPodcast({ ...newPodcast, description: event.target.value })} />
-            </div>
-          </div>
-          <div>
-            <label>Artwork</label>
-            <FileDrop accept="image" label="Upload cover art" record={false} onUploaded={(file) => setNewPodcast({ ...newPodcast, artwork_url: file.url })} />
-          </div>
-          <button className="btn btn-primary" type="submit">Create podcast</button>
-        </form>
-      )}
     </div>
   );
 }

@@ -3,6 +3,7 @@ import Overview from './Overview.jsx';
 import Activity from './Activity.jsx';
 import Stations from './Stations.jsx';
 import Media from './Media.jsx';
+import Podcasts from './Podcasts.jsx';
 import Live from './Live.jsx';
 import Requests from './Requests.jsx';
 import Users from './Users.jsx';
@@ -12,6 +13,7 @@ const TABS = [
   ['activity', 'Listener activity', Activity],
   ['stations', 'Stations', Stations],
   ['media', 'Media', Media],
+  ['podcasts', 'Podcasts', Podcasts],
   ['live', 'Live control', Live],
   ['requests', 'Access requests', Requests],
   ['users', 'Users', Users]

@@ -67,17 +67,22 @@ router.get('/:id', async (req, res) => {
   res.json({ station, media: media.rows, live: live.rows[0] ?? null });
 });
 
-// Any signed-in user may propose a station; the control room approves it.
-router.post('/', auth(), async (req, res) => {
-  const { name, kind = 'radio', description = '', artwork_url = '' } = req.body ?? {};
+// Only the control room creates stations, and it names the owner (itself by default).
+// Listeners have no content controls; a station owner gets the studio for their own.
+router.post('/', auth({ admin: true }), async (req, res) => {
+  const { name, kind = 'radio', description = '', artwork_url = '', owner_id } = req.body ?? {};
   if (!name) return res.status(400).json({ error: 'A station name is required' });
   if (!['radio', 'tv'].includes(kind)) return res.status(400).json({ error: 'Station type must be radio or tv' });
 
-  const approved = req.user.role === 'admin';
+  const owner = owner_id ? Number(owner_id) : req.user.id;
+  if (owner !== req.user.id) {
+    const { rows: owners } = await q('SELECT id FROM users WHERE id = $1', [owner]);
+    if (!owners.length) return res.status(400).json({ error: 'That owner account does not exist' });
+  }
   const { rows } = await q(
     `INSERT INTO stations (name, kind, description, artwork_url, status, owner_id)
-     VALUES ($1,$2,$3,$4,$5,$6) RETURNING *`,
-    [name.trim(), kind, description, artwork_url, approved ? 'approved' : 'pending', req.user.id]
+     VALUES ($1,$2,$3,$4,'approved',$5) RETURNING *`,
+    [name.trim(), kind, description, artwork_url, owner]
   );
   await logActivity(req.user.id, 'station_create', `${req.user.name} created ${name.trim()}`, rows[0].id);
   res.status(201).json({ station: rows[0] });

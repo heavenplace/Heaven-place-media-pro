@@ -111,9 +111,12 @@ export default function Studio() {
 
       {stations.length === 0 ? (
         <Empty>
-          <p>You do not own a station yet.</p>
-          <Link className="btn btn-primary" to="/radio">Create a radio station</Link>{' '}
-          <Link className="btn" to="/tv">Create a TV station</Link>
+          <p>{user.role === 'admin' ? 'You do not own a station.' : 'You do not have a station yet.'}</p>
+          <p className="tiny muted">
+            {user.role === 'admin'
+              ? 'Create one from the control room: Stations → Add station.'
+              : 'The control room assigns stations to their owners — ask them to put one in your name.'}
+          </p>
         </Empty>
       ) : (
         <>
