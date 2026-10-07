@@ -106,6 +106,10 @@ docker compose -f docker-compose.mobile.yml run --rm android
   APK and the control-room APK, to anyone. Those are plain links to `/downloads/...`, and
   the files are build output — a real deployment has to upload the built APKs alongside
   the site or the buttons 404.
+- Vite has no mime type for `.apk`, so a phone saved the download as a `.zip` (an APK is
+  a zip inside). `web/vite.config.js` now serves `/downloads/*.apk` as
+  `application/vnd.android.package-archive` with an attachment filename. Any host serving
+  the APKs in a real deployment needs those same headers.
 - `mobile/build-apks.sh` is the whole build; `mobile/Dockerfile` is the toolchain
   (JDK 21 + Android SDK 35). The Gradle cache and the signing key live in the
   `gradle_cache` and `keystore` volumes, so repeat builds are quick and keep the same
