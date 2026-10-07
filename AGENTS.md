@@ -102,6 +102,10 @@ docker compose -f docker-compose.mobile.yml run --rm android
 - Produces four files in `web/public/downloads/` (git-ignored, and served at
   `/downloads/...` so they can be fetched from the preview host):
   `streamcast-{listener,admin}-{debug,release}.apk`.
+- The home page offers the download (`web/src/components/GetTheApp.jsx`): everyone gets the
+  listener APK, and a signed-in admin also gets the control-room one. Those are plain
+  links to `/downloads/...`, and the files are build output — a real deployment has to
+  upload the built APKs alongside the site or the buttons 404.
 - `mobile/build-apks.sh` is the whole build; `mobile/Dockerfile` is the toolchain
   (JDK 21 + Android SDK 35). The Gradle cache and the signing key live in the
   `gradle_cache` and `keystore` volumes, so repeat builds are quick and keep the same

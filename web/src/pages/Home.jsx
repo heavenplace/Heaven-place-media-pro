@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { api } from '../api.js';
 import { usePlayer } from '../components/Player.jsx';
 import { AccessBadge, Empty, LiveBadge, MediaRow, StationCard } from '../components/Cards.jsx';
+import GetTheApp from '../components/GetTheApp.jsx';
 
 export default function Home() {
   const { play } = usePlayer();
@@ -54,6 +55,8 @@ export default function Home() {
           </div>
         </div>
       </section>
+
+      <GetTheApp />
 
       <section>
         <div className="between">
