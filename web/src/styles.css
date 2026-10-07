@@ -190,6 +190,9 @@ tr:hover td { background: rgba(255, 255, 255, 0.02); }
 @keyframes spin { to { transform: rotate(360deg); } }
 
 @media (max-width: 720px) {
+  /* The seven control-room tabs cannot fit a phone in one row — wrap them so that
+     none of them hide behind a sideways swipe. */
+  .tabs { flex-wrap: wrap; overflow-x: visible; }
   .header-inner { flex-wrap: wrap; }
   .brand small { display: none; }
   h1 { font-size: 22px; }

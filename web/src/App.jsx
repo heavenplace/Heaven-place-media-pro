@@ -13,9 +13,25 @@ import Admin from './pages/admin/Admin.jsx';
 import { useAuth } from './AuthContext.jsx';
 
 function RequireAdmin({ children }) {
-  const { user, ready } = useAuth();
+  const { user, ready, logout } = useAuth();
   if (!ready) return <div className="empty">Loading…</div>;
-  if (user?.role !== 'admin') return <Navigate to="/" replace />;
+  // The control-room app opens /admin directly, so a visitor who is not signed in is sent
+  // to sign in and then back here, instead of silently landing in the listener app.
+  if (!user) return <Navigate to="/login?next=%2Fadmin" replace />;
+  if (user.role !== 'admin') {
+    return (
+      <div className="panel stack" style={{ maxWidth: 460 }}>
+        <h1>The control room</h1>
+        <p className="muted">
+          This area is for administrators. You are signed in as {user.email}. Sign out and sign in with an
+          administrator account to manage the platform.
+        </p>
+        <button className="btn btn-primary" onClick={logout}>
+          Sign out
+        </button>
+      </div>
+    );
+  }
   return children;
 }
 

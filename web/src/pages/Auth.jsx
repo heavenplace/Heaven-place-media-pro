@@ -1,11 +1,15 @@
 import { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../AuthContext.jsx';
 import { GoogleSignInGate } from '../components/GoogleSignIn.jsx';
 
 export default function Auth({ mode }) {
   const { login, register, user } = useAuth();
   const navigate = useNavigate();
+  const [search] = useSearchParams();
+  // Where to land after signing in — the control room sends visitors here with ?next=/admin.
+  const requested = search.get('next');
+  const next = requested && requested.startsWith('/') && !requested.startsWith('//') ? requested : '/';
   const [form, setForm] = useState({ name: '', email: '', password: '' });
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
@@ -28,7 +32,7 @@ export default function Auth({ mode }) {
     try {
       if (mode === 'register') await register(form.name, form.email, form.password);
       else await login(form.email, form.password);
-      navigate('/');
+      navigate(next);
     } catch (err) {
       setError(err.message);
     } finally {
