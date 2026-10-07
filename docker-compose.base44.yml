@@ -1,0 +1,84 @@
+name: streamcast-pro
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: on-failure
+    environment:
+      POSTGRES_USER: streamcast
+      POSTGRES_PASSWORD: streamcast
+      POSTGRES_DB: streamcast
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U streamcast -d streamcast"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+
+  # Express API — runs from the bind-mounted source with node --watch.
+  api:
+    image: node:22-alpine
+    restart: on-failure
+    working_dir: /app/api
+    env_file:
+      - ./.env.base44-defaults
+      - /run/base44/app.env
+    environment:
+      - NODE_ENV=development
+      - PORT=8000
+      - DATABASE_URL=postgres://streamcast:streamcast@db:5432/streamcast
+      - UPLOAD_DIR=/app/api/uploads
+      - SEED_DEMO=1
+      - CORS_ORIGIN=https://3000-${BASE44_PUBLIC_HOST_SUFFIX}
+      - BASE44_PREVIEW_MODE
+    command: ["sh", "-ec", "npm install --no-audit --no-fund && exec node --watch server.js"]
+    volumes:
+      - .:/app
+      - api_node_modules:/app/api/node_modules
+      - uploads:/app/api/uploads
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"fetch('http://127.0.0.1:8000/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 60s
+
+  # Listener + admin web app. Single public origin on 3000; it proxies
+  # /api and /uploads to the api service.
+  web:
+    image: node:22-alpine
+    restart: on-failure
+    working_dir: /app/web
+    environment:
+      - NODE_ENV=development
+      - API_URL=http://api:8000
+      - __VITE_ADDITIONAL_SERVER_ALLOWED_HOSTS
+      - BASE44_PREVIEW_MODE
+    command: ["sh", "-ec", "npm install --no-audit --no-fund && exec npx vite --host 0.0.0.0 --port 3000 --strictPort"]
+    volumes:
+      - .:/app
+      - web_node_modules:/app/web/node_modules
+    ports:
+      - "3000:3000"
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"fetch('http://127.0.0.1:3000/').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 90s
+
+volumes:
+  db_data:
+  api_node_modules:
+  web_node_modules:
+  uploads:
