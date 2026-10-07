@@ -21,12 +21,23 @@ Demo content is seeded only when the `stations` table is empty (`SEED_DEMO=1`).
 
 ## Sign in
 
-The control-room account is created on first boot from `.env.base44-defaults`:
+The main control-room account is whatever `ADMIN_EMAIL` names, with `ADMIN_PASSWORD` as
+its password. Both are app secrets delivered in `/run/base44/app.env` (outside the repo);
+`.env.base44-defaults` only carries the `admin@streamcast.pro` / `control-room` fallback
+used when no secret is set.
 
-- `admin@streamcast.pro` / `control-room` (role `admin`, tier `premium`)
+- On start, `ensureAdmin()` (`api/db.js`) creates that address as `role = 'admin'`,
+  `tier = 'premium'`.
+- If the address **already exists** — someone registered it as a listener, or signed in
+  with Google — it is promoted to `admin` but keeps its own password. A Google-created
+  account has an unguessable hash and so has no password login until one is set (which is
+  what the Android apps need, since Google sign-in does not work in a WebView):
+  `UPDATE users SET password_hash = <bcryptjs hash of ADMIN_PASSWORD>`.
 
-Change those values (or the account, from the Users screen) for anything real.
-Everyone else registers from `/register`.
+Everyone else registers from `/register`. Access levels: a listener account can own
+stations and use the studio (`/studio`, which only ever shows its own stations); `/admin`
+and every `/api/admin/*` route are `role = 'admin'` only, and a signed-out or non-admin
+visitor gets told to sign in rather than being dropped into the listener app.
 
 ## Configuration
 
