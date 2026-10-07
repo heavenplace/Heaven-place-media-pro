@@ -132,8 +132,13 @@ export async function ensureSchema() {
 export async function ensureAdmin() {
   const email = process.env.ADMIN_EMAIL || 'admin@streamcast.pro';
   const password = process.env.ADMIN_PASSWORD || 'control-room';
-  const { rows } = await q('SELECT id FROM users WHERE email = $1', [email]);
-  if (rows.length) return;
+  const { rows } = await q('SELECT id, role FROM users WHERE email = $1', [email]);
+  if (rows.length) {
+    // The main control-room account is whatever ADMIN_EMAIL names. If that address was
+    // already registered as an ordinary listener, promote it; leave its password alone.
+    if (rows[0].role !== 'admin') await q("UPDATE users SET role = 'admin' WHERE id = $1", [rows[0].id]);
+    return;
+  }
   await q(
     'INSERT INTO users (email, password_hash, name, role, tier) VALUES ($1, $2, $3, $4, $5)',
     [email, await bcrypt.hash(password, 10), 'Control Room', 'admin', 'premium']
