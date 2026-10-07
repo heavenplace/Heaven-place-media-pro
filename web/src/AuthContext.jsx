@@ -35,14 +35,29 @@ export function AuthProvider({ children }) {
     return data.user;
   }, []);
 
+  const loginWithGoogle = useCallback(async (credential) => {
+    const data = await api('/auth/google', { method: 'POST', body: { credential } });
+    setToken(data.token);
+    setUser(data.user);
+    return data.user;
+  }, []);
+
+  // Re-reads the signed-in user — used after a purchase changes their tier.
+  const refresh = useCallback(async () => {
+    if (!getToken()) return null;
+    const data = await api('/auth/me');
+    setUser(data.user);
+    return data.user;
+  }, []);
+
   const logout = useCallback(() => {
     setToken(null);
     setUser(null);
   }, []);
 
   const value = useMemo(
-    () => ({ user, ready, login, register, logout, isAdmin: user?.role === 'admin' }),
-    [user, ready, login, register, logout]
+    () => ({ user, ready, login, register, loginWithGoogle, refresh, logout, isAdmin: user?.role === 'admin' }),
+    [user, ready, login, register, loginWithGoogle, refresh, logout]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../AuthContext.jsx';
+import { GoogleSignInGate } from '../components/GoogleSignIn.jsx';
 
 export default function Auth({ mode }) {
   const { login, register, user } = useAuth();
@@ -85,17 +86,22 @@ export default function Auth({ mode }) {
         </button>
       </form>
 
-      <button
-        className="btn"
-        type="button"
-        onClick={() =>
-          setGoogleNote(
-            'Google sign-in needs OAuth credentials for this app. Add a Google client id and secret and it can be switched on.'
-          )
-        }
-      >
-        Continue with Google
-      </button>
+      <GoogleSignInGate
+        onError={setError}
+        onUnavailable={() => (
+          <button
+            className="btn"
+            type="button"
+            onClick={() =>
+              setGoogleNote(
+                'Google sign-in is not switched on for this server yet — add a Google client id and the button appears here.'
+              )
+            }
+          >
+            Continue with Google
+          </button>
+        )}
+      />
       {googleNote && <div className="notice small">{googleNote}</div>}
 
       <div className="row small muted">

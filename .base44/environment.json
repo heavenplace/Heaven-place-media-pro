@@ -8,6 +8,21 @@
       "description": "Signs listener and admin login sessions. Any long random string; Base44 stores it encrypted and it never reaches the repo.",
       "requiredAtBoot": true,
       "generatedForDevelopment": true
+    },
+    {
+      "name": "GOOGLE_CLIENT_ID",
+      "description": "Google Cloud Console → APIs & Services → Credentials → OAuth client ID (type: Web application). Paste the client ID and add the app's origin under 'Authorized JavaScript origins'. Switches on the 'Sign in with Google' button; the API verifies the token with the same id.",
+      "requiredAtBoot": false
+    },
+    {
+      "name": "STRIPE_SECRET_KEY",
+      "description": "Stripe Dashboard → Developers → API keys → Secret key (sk_test_… while testing). Switches on card checkout for Premium memberships and paid downloads.",
+      "requiredAtBoot": false
+    },
+    {
+      "name": "STRIPE_WEBHOOK_SECRET",
+      "description": "Stripe Dashboard → Developers → Webhooks → add endpoint <api origin>/api/payments/webhook for checkout.session.completed, then copy its signing secret (whsec_…). Optional: the back-from-checkout confirmation already grants access, this is the authoritative path for a real deployment.",
+      "requiredAtBoot": false
     }
   ]
 }

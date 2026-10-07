@@ -1,7 +1,9 @@
 import express from 'express';
 import bcrypt from 'bcryptjs';
+import { randomBytes } from 'node:crypto';
 import { q } from '../db.js';
 import { auth, publicUser, signToken } from '../auth.js';
+import { verifyGoogleCredential } from '../google.js';
 import { logActivity } from '../guards.js';
 
 const router = express.Router();
@@ -37,6 +39,41 @@ router.post('/login', async (req, res) => {
   const user = publicUser(rows[0]);
   await logActivity(user.id, 'signin', `${user.name} signed in`);
   res.json({ token: signToken(user), user });
+});
+
+// Sign in (or sign up) with a Google ID token from the browser credential flow.
+// An account with that verified email is reused; otherwise one is created.
+router.post('/google', async (req, res) => {
+  const { credential } = req.body ?? {};
+  if (!credential) return res.status(400).json({ error: 'Missing Google credential' });
+
+  let profile;
+  try {
+    profile = await verifyGoogleCredential(credential);
+  } catch (error) {
+    return res.status(error.status || 401).json({ error: error.message });
+  }
+
+  const existing = await q(
+    'SELECT id, email, name, role, tier, avatar_url FROM users WHERE lower(email) = lower($1)',
+    [profile.email]
+  );
+
+  if (existing.rows.length) {
+    const user = publicUser(existing.rows[0]);
+    await logActivity(user.id, 'signin', `${user.name} signed in with Google`);
+    return res.json({ token: signToken(user), user });
+  }
+
+  // Google accounts have no local password: store an unguessable hash so the
+  // email/password login form stays shut for them.
+  const { rows } = await q(
+    'INSERT INTO users (email, password_hash, name, avatar_url) VALUES ($1,$2,$3,$4) RETURNING id, email, name, role, tier, avatar_url',
+    [profile.email, await bcrypt.hash(randomBytes(32).toString('hex'), 10), profile.name, profile.picture]
+  );
+  const user = publicUser(rows[0]);
+  await logActivity(user.id, 'signup', `${user.name} created an account with Google`);
+  res.status(201).json({ token: signToken(user), user });
 });
 
 router.get('/me', auth(), (req, res) => res.json({ user: req.user }));

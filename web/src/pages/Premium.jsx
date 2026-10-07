@@ -2,16 +2,19 @@ import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api, formatMoney } from '../api.js';
 import { useAuth } from '../AuthContext.jsx';
+import { useConfig } from '../config.js';
 import { Empty, MediaRow } from '../components/Cards.jsx';
 import { usePlayer } from '../components/Player.jsx';
 
 export default function Premium() {
-  const { user, ready } = useAuth();
+  const { user, ready, refresh } = useAuth();
   const { play } = usePlayer();
+  const config = useConfig();
   const [mine, setMine] = useState({ requests: [], unlocks: [], subscription: null });
   const [paid, setPaid] = useState([]);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
+  const [busy, setBusy] = useState(false);
 
   const load = useCallback(() => {
     if (user) api('/requests/mine').then(setMine).catch((err) => setError(err.message));
@@ -19,6 +22,46 @@ export default function Premium() {
   }, [user]);
 
   useEffect(load, [load]);
+
+  // Landing back from Stripe: confirm the payment with the API and pick up the
+  // new tier. The webhook also fulfils, so this is only the browser's fast path.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const outcome = params.get('checkout');
+    if (!outcome) return;
+    const sessionId = params.get('session_id');
+    window.history.replaceState({}, '', window.location.pathname);
+
+    if (outcome === 'cancelled') {
+      setMessage('Checkout cancelled — nothing was charged.');
+      return;
+    }
+    if (!sessionId) return;
+
+    api('/payments/confirm', { method: 'POST', body: { session_id: sessionId } })
+      .then(async (data) => {
+        setMessage(data.message || 'Payment received.');
+        await refresh();
+      })
+      .catch((err) => setError(err.message))
+      .finally(load);
+  }, [load, refresh]);
+
+  const startCheckout = async (kind, mediaId = null) => {
+    setError('');
+    setMessage('');
+    setBusy(true);
+    try {
+      const data = await api('/payments/checkout', {
+        method: 'POST',
+        body: { kind, media_id: mediaId, origin: window.location.origin }
+      });
+      window.location.assign(data.url);
+    } catch (err) {
+      setError(err.message);
+      setBusy(false);
+    }
+  };
 
   const askPremium = async () => {
     setError('');
@@ -70,6 +113,13 @@ export default function Premium() {
                 ? ` — renews ${new Date(mine.subscription.current_period_end).toLocaleDateString()}`
                 : ''}
             </div>
+          ) : config?.payments_enabled ? (
+            <div className="stack" style={{ gap: 8 }}>
+              <button className="btn btn-primary" onClick={() => startCheckout('premium')} disabled={busy}>
+                {busy ? <span className="spinner" /> : `Subscribe by card — ${formatMoney(config.premium_price_cents)}/mo`}
+              </button>
+              <button className="btn btn-sm" onClick={askPremium}>Ask the control room instead</button>
+            </div>
           ) : (
             <button className="btn btn-primary" onClick={askPremium}>Request Premium membership</button>
           )}
@@ -79,7 +129,9 @@ export default function Premium() {
       <section>
         <div className="between">
           <h2>Paid downloads</h2>
-          <span className="tiny muted">Request an item and the control room unlocks it</span>
+          <span className="tiny muted">
+            {config?.payments_enabled ? 'Buy with a card, or ask the control room to unlock one' : 'Request an item and the control room unlocks it'}
+          </span>
         </div>
         {paid.length === 0 ? (
           <Empty>No paid items yet.</Empty>

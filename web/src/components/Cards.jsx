@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api, formatDuration, formatMoney, timeAgo } from '../api.js';
 import { useAuth } from '../AuthContext.jsx';
+import { useConfig } from '../config.js';
 
 export function LiveBadge() {
   return (
@@ -75,8 +76,31 @@ export function MediaRow({ item, onPlay, onChanged }) {
 
 export function DownloadButton({ item, onChanged }) {
   const { user } = useAuth();
+  const config = useConfig();
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
+  const sellWithCard = item.access === 'paid' && Boolean(config?.payments_enabled);
+
+  // Hands the browser to Stripe's hosted checkout for this item.
+  const startCheckout = async () => {
+    const data = await api('/payments/checkout', {
+      method: 'POST',
+      body: { kind: 'download', media_id: item.id, origin: window.location.origin }
+    });
+    window.location.assign(data.url);
+  };
+
+  const buy = async () => {
+    if (!user) return setMessage('Sign in to buy this download');
+    setBusy(true);
+    setMessage('');
+    try {
+      await startCheckout();
+    } catch (error) {
+      setMessage(error.message);
+      setBusy(false);
+    }
+  };
 
   const download = async () => {
     if (!user) return setMessage('Sign in to download');
@@ -94,7 +118,13 @@ export function DownloadButton({ item, onChanged }) {
       link.remove();
       onChanged?.();
     } catch (error) {
-      if (error.status === 402) {
+      if (error.status === 402 && sellWithCard) {
+        try {
+          await startCheckout();
+        } catch (inner) {
+          setMessage(inner.message);
+        }
+      } else if (error.status === 402) {
         try {
           await api('/requests', {
             method: 'POST',
@@ -114,6 +144,11 @@ export function DownloadButton({ item, onChanged }) {
 
   return (
     <span className="row" style={{ gap: 8 }}>
+      {sellWithCard && (
+        <button className="btn btn-sm btn-primary" onClick={buy} disabled={busy}>
+          Buy {formatMoney(item.price_cents)}
+        </button>
+      )}
       <button className="btn btn-sm" onClick={download} disabled={busy}>
         {busy ? <span className="spinner" /> : 'Download'}
       </button>
