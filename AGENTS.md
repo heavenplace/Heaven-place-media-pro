@@ -124,6 +124,12 @@ docker compose -f docker-compose.mobile.yml run --rm android
   `keystore` volume, password from `ANDROID_KEYSTORE_PASSWORD`). Keep that file: it is
   what lets a later build update an app that is already installed. Use your own key
   before publishing to the Play Store.
+- Android 15 forces edge-to-edge for a `targetSdk 35` app, so the page has to leave room
+  for the system bars: `web/index.html` sets `viewport-fit=cover` and `web/src/styles.css`
+  pads the sticky header with `env(safe-area-inset-top)` and the app/player with
+  `env(safe-area-inset-bottom)`. Without that the status bar covers the header and the
+  Admin link cannot be tapped. Both apps load the live site, so this is fixed on the
+  site — no APK rebuild needed.
 - Google sign-in does **not** work inside the APKs — Google blocks its sign-in flow in
   embedded WebViews. Email + password works fine; the fix is a native Google Sign-In
   plugin, which is not wired up yet.

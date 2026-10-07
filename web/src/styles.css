@@ -35,12 +35,14 @@ h1 { font-size: 26px; }
 h2 { font-size: 20px; }
 h3 { font-size: 16px; }
 
-.app { min-height: 100vh; padding-bottom: 96px; }
+.app { min-height: 100vh; padding-bottom: calc(96px + env(safe-area-inset-bottom, 0px)); }
 .wrap { width: min(1200px, 100% - 32px); margin: 0 auto; }
 
 /* ---------- header ---------- */
 .header {
   position: sticky; top: 0; z-index: 40;
+  /* On a phone the app runs edge to edge, so leave room for the status bar. */
+  padding-top: env(safe-area-inset-top, 0px);
   backdrop-filter: blur(12px);
   background: rgba(10, 11, 15, 0.86);
   border-bottom: 1px solid var(--line);
@@ -138,7 +140,9 @@ label { display: block; font-size: 12px; color: var(--muted); margin: 0 0 6px; f
 .player {
   position: fixed; left: 0; right: 0; bottom: 0; z-index: 60;
   background: rgba(18, 20, 27, 0.96); border-top: 1px solid var(--line);
-  backdrop-filter: blur(14px); padding: 10px 0;
+  backdrop-filter: blur(14px);
+  /* Keep the player clear of the phone's gesture / navigation bar. */
+  padding: 10px 0 calc(10px + env(safe-area-inset-bottom, 0px));
 }
 .player-inner { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
 .player-meta { min-width: 0; }
