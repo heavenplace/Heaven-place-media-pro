@@ -95,8 +95,15 @@ app.use((error, _req, res, _next) => {
     console.warn('[api] rejected a request with a malformed JSON body');
     return res.status(400).json({ error: 'The request body is not valid JSON' });
   }
-  console.error('[api]', error);
   const status = error.status || (error.code === 'LIMIT_FILE_SIZE' ? 413 : 500);
+  // A file the platform does not publish, an oversized upload, a refused request: the
+  // client's mistake too. One short line keeps the service log about the API's own
+  // faults, instead of surfacing every rejected upload as a stack trace.
+  if (status < 500) {
+    console.warn(`[api] rejected a request: ${error.message}`);
+    return res.status(status).json({ error: error.message || 'Something went wrong' });
+  }
+  console.error('[api]', error);
   res.status(status).json({ error: error.message || 'Something went wrong' });
 });
 

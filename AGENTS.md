@@ -90,8 +90,9 @@ key — a placeholder only makes the app start, it does not take money.
     `application/octet-stream` (or with no type at all) on the next. `MEDIA_TYPES` in
     `api/uploads.js` is the single list: it decides what `POST /api/uploads` accepts (the
     mimetype family, else the extension — documents and archives are still refused, now
-    with a 400 instead of a 500), the `mime` it reports back, and the `Content-Type`
-    `express.static` serves the file with. The static handler's built-in mime table knows
+    with a 400 instead of a 500, logged as one `[api] rejected a request: ...` line
+    rather than a stack trace, because a refused upload is the client's mistake), the
+    `mime` it reports back, and the `Content-Type` `express.static` serves the file with. The static handler's built-in mime table knows
     less — it served a `.opus` as `application/octet-stream`, which some players refuse —
     so there the extension is authoritative. A new format is one line in that map.
   - The studio's picker names the extensions beside `audio/*` / `video/*` (a bare wildcard
