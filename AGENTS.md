@@ -415,6 +415,10 @@ the check script's fault, not the app's:
   line (`| head -n1`) — otherwise the tag leaks into the next SQL statement (syntax
   error in the `db` log) and into JSON bodies (a body-parser 400 in the `api` log with
   the tag quoted back at you).
+- The database role is `streamcast` (the compose `POSTGRES_USER`), never `postgres`: an
+  ad-hoc `psql -U postgres` shows as `FATAL: role "postgres" does not exist` in the `db`
+  log while the app itself is fine. Use
+  `docker compose -f docker-compose.base44.yml exec -T db psql -U streamcast -d streamcast ...`.
 - `activity` has no `title` column; it is `type` + `detail`, and `live_sessions` has
   `started_at`, not `created_at`.
 - A `psql` capture that leaks its command tag into a later statement shows up as a
