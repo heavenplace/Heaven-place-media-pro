@@ -9,6 +9,7 @@ import Live from './Live.jsx';
 import Requests from './Requests.jsx';
 import Users from './Users.jsx';
 import Applications from './Applications.jsx';
+import PaymentAccounts from './PaymentAccounts.jsx';
 import Revenue from './Revenue.jsx';
 
 const TABS = [
@@ -16,6 +17,7 @@ const TABS = [
   ['activity', 'Listener activity', Activity],
   ['stations', 'Stations', Stations],
   ['applications', 'Applications', Applications],
+  ['payment-accounts', 'Payment accounts', PaymentAccounts],
   ['media', 'Media', Media],
   ['moderation', 'Moderation', Moderation],
   ['revenue', 'Revenue', Revenue],

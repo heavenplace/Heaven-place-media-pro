@@ -26,6 +26,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -866,8 +867,109 @@ private fun SettingsTab(
                 }
             }
         }
+
+        item { SectionTitle("Payout details") }
+        item { PayoutSettings(notify, fail) }
     }
 }
+
+private data class PayoutForm(
+    val accountName: String = "",
+    val bankName: String = "",
+    val accountNumber: String = "",
+    val routingNumber: String = "",
+    val note: String = ""
+)
+
+/**
+ * Where the control room sends this account's settled earnings — the same payout profile the
+ * web studio saves (`/api/earnings/account`), so an owner can set it from the phone too. One
+ * profile covers every station the account owns, and the control room reads it when it
+ * records a payout. The money itself moves outside the app, so this is only the instruction.
+ */
+@Composable
+private fun PayoutSettings(notify: (String) -> Unit, fail: (String) -> Unit) {
+    val scope = rememberCoroutineScope()
+    val stored = remote("studio-payout") { Api.get("/earnings/account").optJSONObject("account") }
+    var form by remember { mutableStateOf<PayoutForm?>(null) }
+    var saved by remember { mutableStateOf(false) }
+    var busy by remember { mutableStateOf(false) }
+
+    LaunchedEffect(stored.loading, stored.data) {
+        if (!stored.loading && form == null) {
+            val row = stored.data
+            form = PayoutForm(
+                accountName = row?.field("account_name").orEmpty(),
+                bankName = row?.field("bank_name").orEmpty(),
+                accountNumber = row?.field("account_number").orEmpty(),
+                routingNumber = row?.field("routing_number").orEmpty(),
+                note = row?.field("note").orEmpty()
+            )
+            saved = row != null
+        }
+    }
+
+    val current = form ?: return
+
+    Column(
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(Brand.panel).padding(12.dp)
+    ) {
+        Text("Payout details", color = Brand.text, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+        Text(
+            "Where the control room sends the earnings from every station on this account. Use the " +
+                "name on the account, not the station name.",
+            color = Brand.muted,
+            fontSize = 11.5.sp,
+            modifier = Modifier.padding(top = 4.dp)
+        )
+
+        TextInput(current.accountName, { form = form?.copy(accountName = it) }, "Account holder")
+        TextInput(current.bankName, { form = form?.copy(bankName = it) }, "Bank")
+        TextInput(current.accountNumber, { form = form?.copy(accountNumber = it) }, "Account number")
+        TextInput(current.routingNumber, { form = form?.copy(routingNumber = it) }, "Routing / sort code / SWIFT")
+        TextInput(current.note, { form = form?.copy(note = it) }, "Note for the control room")
+
+        Text(
+            if (saved) "Saved — the control room sees these details." else "Not saved yet.",
+            color = Brand.muted,
+            fontSize = 11.sp,
+            modifier = Modifier.padding(top = 4.dp)
+        )
+        Spacer(Modifier.height(6.dp))
+
+        PrimaryButton(
+            text = if (busy) "Saving…" else "Save payout details",
+            enabled = !busy &&
+                current.accountName.isNotBlank() &&
+                current.bankName.isNotBlank() &&
+                current.accountNumber.isNotBlank()
+        ) {
+            busy = true
+            scope.launch {
+                try {
+                    Api.put(
+                        "/earnings/account",
+                        JSONObject()
+                            .put("account_name", current.accountName.trim())
+                            .put("bank_name", current.bankName.trim())
+                            .put("account_number", current.accountNumber.trim())
+                            .put("routing_number", current.routingNumber)
+                            .put("note", current.note)
+                    )
+                    saved = true
+                    notify("Payout details saved.")
+                } catch (failure: Exception) {
+                    fail(failure.message ?: "Could not save the payout details")
+                } finally {
+                    busy = false
+                }
+            }
+        }
+    }
+}
+
+/** A nullable text column — the API sends a real JSON null for "no value". */
+private fun JSONObject.field(key: String): String? = if (isNull(key)) null else optString(key)
 
 /** Pick a file from the phone, upload it to the API, and hand back its url and length. */
 @Composable

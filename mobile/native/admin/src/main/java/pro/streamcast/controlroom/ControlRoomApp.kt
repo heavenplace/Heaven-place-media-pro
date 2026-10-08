@@ -36,6 +36,8 @@ import pro.streamcast.core.SignInScreen
 enum class Desk(val label: String) {
     Dashboard("Dashboard"),
     Stations("Stations"),
+    Applications("Applications"),
+    Payments("Payments"),
     Moderation("Moderation"),
     Live("Live"),
     Users("Users")
@@ -96,6 +98,8 @@ fun ControlRoomApp(session: Session) {
             when (desk) {
                 Desk.Dashboard -> DashboardScreen(signedIn)
                 Desk.Stations -> StationsScreen()
+                Desk.Applications -> ApplicationsScreen()
+                Desk.Payments -> PaymentsScreen()
                 Desk.Moderation -> ModerationScreen()
                 Desk.Live -> LiveScreen()
                 Desk.Users -> UsersScreen()

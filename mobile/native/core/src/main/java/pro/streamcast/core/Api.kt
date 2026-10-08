@@ -49,6 +49,8 @@ object Api {
 
     suspend fun patch(path: String, body: JSONObject? = null): JSONObject = call("PATCH", path, body) ?: JSONObject()
 
+    suspend fun put(path: String, body: JSONObject? = null): JSONObject = call("PUT", path, body) ?: JSONObject()
+
     suspend fun delete(path: String) {
         call("DELETE", path, null)
     }

@@ -157,7 +157,30 @@ CREATE TABLE IF NOT EXISTS earnings (
   created_at timestamptz NOT NULL DEFAULT now()
 );
 
--- A listener's request to open a station: FM only, or FM with a TV twin.
+-- Where a station applicant sends the licence fee. The control room adds one row per
+-- receiving account — a bank account in a national currency, or a crypto wallet — with
+-- rate_per_usd (units of that currency per US$1) so the $5/$15 fee lands on an exact
+-- amount in that currency. The app shows that amount; the control room verifies the proof.
+CREATE TABLE IF NOT EXISTS payment_accounts (
+  id serial PRIMARY KEY,
+  label text NOT NULL,
+  method text NOT NULL DEFAULT 'bank',
+  currency text NOT NULL,
+  country text,
+  account_name text,
+  account_number text,
+  bank_name text,
+  network text,
+  rate_per_usd numeric(20,8) NOT NULL DEFAULT 1,
+  instructions text,
+  active boolean NOT NULL DEFAULT true,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+-- A listener's request to open a station: FM only, or FM with a TV twin. The licence fee
+-- is settled either by card (Stripe) or by a transfer to one of the control room's
+-- payment accounts with the proof handed over below.
 CREATE TABLE IF NOT EXISTS station_applications (
   id serial PRIMARY KEY,
   user_id integer REFERENCES users(id) ON DELETE CASCADE,
@@ -169,6 +192,17 @@ CREATE TABLE IF NOT EXISTS station_applications (
   fee_status text NOT NULL DEFAULT 'unpaid',
   paid_at timestamptz,
   checkout_session_id text,
+  payment_account_id integer REFERENCES payment_accounts(id) ON DELETE SET NULL,
+  currency text,
+  amount_units numeric(20,8),
+  payment_reference text,
+  proof_url text,
+  proof_note text,
+  proof_status text NOT NULL DEFAULT 'none',
+  proof_submitted_at timestamptz,
+  proof_reviewed_by integer REFERENCES users(id) ON DELETE SET NULL,
+  proof_reviewed_at timestamptz,
+  proof_review_note text,
   status text NOT NULL DEFAULT 'pending',
   review_note text,
   reviewed_by integer REFERENCES users(id) ON DELETE SET NULL,
@@ -209,6 +243,18 @@ ALTER TABLE live_sessions ALTER COLUMN expires_at DROP NOT NULL;
 -- 'standard' stations publish free content; 'premium' (the $15 licence) may also
 -- publish premium and paid items and earn from what listeners buy.
 ALTER TABLE stations ADD COLUMN IF NOT EXISTS plan text NOT NULL DEFAULT 'standard';
+-- The licence fee paid to one of the control room's payment accounts, with the proof.
+ALTER TABLE station_applications ADD COLUMN IF NOT EXISTS payment_account_id integer REFERENCES payment_accounts(id) ON DELETE SET NULL;
+ALTER TABLE station_applications ADD COLUMN IF NOT EXISTS currency text;
+ALTER TABLE station_applications ADD COLUMN IF NOT EXISTS amount_units numeric(20,8);
+ALTER TABLE station_applications ADD COLUMN IF NOT EXISTS payment_reference text;
+ALTER TABLE station_applications ADD COLUMN IF NOT EXISTS proof_url text;
+ALTER TABLE station_applications ADD COLUMN IF NOT EXISTS proof_note text;
+ALTER TABLE station_applications ADD COLUMN IF NOT EXISTS proof_status text NOT NULL DEFAULT 'none';
+ALTER TABLE station_applications ADD COLUMN IF NOT EXISTS proof_submitted_at timestamptz;
+ALTER TABLE station_applications ADD COLUMN IF NOT EXISTS proof_reviewed_by integer REFERENCES users(id) ON DELETE SET NULL;
+ALTER TABLE station_applications ADD COLUMN IF NOT EXISTS proof_reviewed_at timestamptz;
+ALTER TABLE station_applications ADD COLUMN IF NOT EXISTS proof_review_note text;
 `;
 
 export async function ensureSchema() {

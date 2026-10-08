@@ -4,6 +4,7 @@ import { api, formatMoney, timeAgo } from '../api.js';
 import { useAuth } from '../AuthContext.jsx';
 import { useConfig } from '../config.js';
 import { Empty } from '../components/Cards.jsx';
+import LicencePayment from '../components/LicencePayment.jsx';
 
 const DEFAULT_FEES = { standard: 500, premium: 1500 };
 
@@ -31,6 +32,7 @@ export default function Apply() {
 
   const [form, setForm] = useState({ station_name: '', description: '', coverage: 'fm', plan: 'standard' });
   const [applications, setApplications] = useState([]);
+  const [paying, setPaying] = useState(null);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
@@ -79,7 +81,8 @@ export default function Apply() {
         return;
       }
       setForm({ station_name: '', description: '', coverage: 'fm', plan: 'standard' });
-      setMessage('Application received — the control room confirms the licence fee and opens your station.');
+      setPaying(data.application.id);
+      setMessage('Application received — pay the licence fee below, then the control room opens your station.');
       load();
     } catch (err) {
       setError(err.message);
@@ -184,7 +187,7 @@ export default function Apply() {
           <span className="tiny muted">
             {config?.payments_enabled
               ? `You will be taken to a card checkout for ${formatMoney(fee)}.`
-              : 'Card payments are off — the control room confirms the fee with you directly.'}
+              : `Pay ${formatMoney(fee)} by transfer to the control room's account, then upload the proof.`}
           </span>
           <button className="btn btn-primary" type="submit" disabled={busy}>
             {busy ? <span className="spinner" /> : config?.payments_enabled ? `Pay ${formatMoney(fee)} and apply` : 'Submit application'}
@@ -199,20 +202,61 @@ export default function Apply() {
         ) : (
           <div className="list">
             {applications.map((application) => (
-              <div key={application.id} className="row-item">
-                <div>
-                  <b>{application.station_name}</b>
-                  <div className="tiny muted">
-                    {application.coverage === 'fm_tv' ? 'FM + TV' : 'FM only'} · {(application.plan || 'standard')} plan ·{' '}
-                    {formatMoney(application.fee_cents)} · applied {timeAgo(application.created_at)}
+              <div key={application.id} className="stack" style={{ gap: 10 }}>
+                <div className="row-item">
+                  <div>
+                    <b>{application.station_name}</b>
+                    <div className="tiny muted">
+                      {application.coverage === 'fm_tv' ? 'FM + TV' : 'FM only'} · {(application.plan || 'standard')} plan ·{' '}
+                      {formatMoney(application.fee_cents)} · applied {timeAgo(application.created_at)}
+                    </div>
+                    {application.payment_reference && (
+                      <div className="tiny muted">
+                        {Number(application.amount_units)} {application.currency} · ref {application.payment_reference}
+                        {application.proof_review_note ? ` · ${application.proof_review_note}` : ''}
+                      </div>
+                    )}
+                  </div>
+                  <div className="row" style={{ gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                    <span className={application.fee_status === 'paid' ? 'badge badge-ok' : 'badge badge-warn'}>
+                      fee {application.fee_status}
+                    </span>
+                    {application.proof_status !== 'none' && (
+                      <span
+                        className={
+                          application.proof_status === 'verified'
+                            ? 'badge badge-ok'
+                            : application.proof_status === 'rejected'
+                            ? 'badge badge-warn'
+                            : 'badge'
+                        }
+                      >
+                        proof {application.proof_status}
+                      </span>
+                    )}
+                    <span className={statusClass(application.status)}>{application.status}</span>
+                    {application.fee_status !== 'paid' && application.status === 'pending' && (
+                      <button
+                        className="btn btn-sm"
+                        type="button"
+                        onClick={() => setPaying(paying === application.id ? null : application.id)}
+                      >
+                        {paying === application.id ? 'Close' : 'Pay licence fee'}
+                      </button>
+                    )}
                   </div>
                 </div>
-                <div className="row" style={{ gap: 6 }}>
-                  <span className={application.fee_status === 'paid' ? 'badge badge-ok' : 'badge badge-warn'}>
-                    fee {application.fee_status}
-                  </span>
-                  <span className={statusClass(application.status)}>{application.status}</span>
-                </div>
+                {paying === application.id && (
+                  <LicencePayment
+                    application={application}
+                    notify={setMessage}
+                    fail={setError}
+                    onDone={() => {
+                      setPaying(null);
+                      load();
+                    }}
+                  />
+                )}
               </div>
             ))}
           </div>

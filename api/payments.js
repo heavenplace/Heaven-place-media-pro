@@ -21,6 +21,42 @@ export const stationFee = (plan) => STATION_FEES[plan] ?? STATION_FEES.standard;
 
 export const paymentsEnabled = () => Boolean(process.env.STRIPE_SECRET_KEY);
 
+// The control room's receiving accounts: a bank account in a national currency, a crypto
+// wallet, or something else. Each carries `rate_per_usd` — how many units of its currency
+// one US dollar buys — so the $5 / $15 licence converts to an exact amount in that
+// currency. Only that amount covers the licence; less or more does not.
+export const PAYMENT_METHODS = ['bank', 'crypto', 'other'];
+
+const decimalsFor = (method) => (method === 'crypto' ? 6 : 2);
+
+/** The licence fee expressed in a receiving account's own currency. */
+export const licenceUnits = (account, plan) => {
+  const usd = stationFee(plan) / 100;
+  const units = usd * Number(account?.rate_per_usd ?? 0);
+  if (!Number.isFinite(units) || units <= 0) return 0;
+  const factor = 10 ** decimalsFor(account?.method);
+  return Math.round(units * factor) / factor;
+};
+
+/** The amount as a short string, e.g. "7500" NGN or "0.000015" BTC. */
+export const unitsLabel = (amount, method) =>
+  Number(amount ?? 0)
+    .toFixed(decimalsFor(method))
+    .replace(/(\.\d*?[1-9])0+$|\.0+$/, '$1');
+
+/** A receiving account plus the exact amount a standard / premium application must send. */
+export const withAmounts = (account) => {
+  const standard = licenceUnits(account, 'standard');
+  const premium = licenceUnits(account, 'premium');
+  return {
+    ...account,
+    standard_units: standard,
+    premium_units: premium,
+    standard_label: `${unitsLabel(standard, account.method)} ${account.currency}`,
+    premium_label: `${unitsLabel(premium, account.method)} ${account.currency}`
+  };
+};
+
 let client = null;
 
 export function stripeClient() {

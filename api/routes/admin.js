@@ -3,6 +3,7 @@ import { q } from '../db.js';
 import { auth } from '../auth.js';
 import { logActivity } from '../guards.js';
 import { saveRecording } from './live.js';
+import { PAYMENT_METHODS, withAmounts } from '../payments.js';
 
 const router = express.Router();
 router.use(auth({ admin: true }));
@@ -275,9 +276,125 @@ router.post('/live/:id/end', async (req, res) => {
   res.json({ session: rows[0], relive });
 });
 
+// ---- Payment accounts ------------------------------------------------------
+// Where station owners pay their licence fee. The control room keeps one row per
+// receiving account — a bank account in a national currency, or a crypto wallet — and
+// sets `rate_per_usd` so the app can name the exact $5 / $15 equivalent in that currency.
+const ACCOUNT_COLUMNS = [
+  'label',
+  'method',
+  'currency',
+  'country',
+  'account_name',
+  'account_number',
+  'bank_name',
+  'network',
+  'instructions'
+];
+
+const accountValues = (body) => {
+  const text = (value) => String(value ?? '').trim() || null;
+  const rate = body?.rate_per_usd;
+  return {
+    label: text(body?.label),
+    method: PAYMENT_METHODS.includes(body?.method) ? body.method : 'bank',
+    currency: String(body?.currency ?? '').trim().toUpperCase() || null,
+    country: text(body?.country),
+    account_name: text(body?.account_name),
+    account_number: text(body?.account_number),
+    bank_name: text(body?.bank_name),
+    network: text(body?.network),
+    instructions: text(body?.instructions),
+    // Absent on a partial update, so PATCH leaves the rate alone.
+    rate_per_usd: rate === undefined || rate === null || rate === '' ? null : Number(rate)
+  };
+};
+
+router.get('/payment-accounts', async (_req, res) => {
+  const { rows } = await q('SELECT * FROM payment_accounts ORDER BY active DESC, method, currency, label');
+  res.json({ accounts: rows.map(withAmounts) });
+});
+
+router.post('/payment-accounts', async (req, res) => {
+  const values = accountValues(req.body);
+  if (!values.label || !values.currency) {
+    return res.status(400).json({ error: 'A label and a currency are required' });
+  }
+  if (!(values.rate_per_usd > 0)) {
+    return res.status(400).json({ error: 'Set how many units of that currency one US dollar buys' });
+  }
+  const { rows } = await q(
+    `INSERT INTO payment_accounts (label, method, currency, country, account_name, account_number, bank_name, network, rate_per_usd, instructions)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING *`,
+    [
+      values.label,
+      values.method,
+      values.currency,
+      values.country,
+      values.account_name,
+      values.account_number,
+      values.bank_name,
+      values.network,
+      values.rate_per_usd,
+      values.instructions
+    ]
+  );
+  await logActivity(req.user.id, 'payment_account', `${req.user.name} added the ${values.currency} payment account “${values.label}”`);
+  res.status(201).json({ account: withAmounts(rows[0]) });
+});
+
+router.patch('/payment-accounts/:id', async (req, res) => {
+  const accountId = Number(req.params.id);
+  if (!Number.isInteger(accountId) || accountId <= 0) {
+    return res.status(404).json({ error: 'Payment account not found' });
+  }
+  const sets = [];
+  const params = [];
+  const values = accountValues(req.body);
+  for (const column of [...ACCOUNT_COLUMNS, 'rate_per_usd']) {
+    const value = values[column];
+    if (value === null || value === undefined) continue;
+    if (column === 'rate_per_usd' && !(value > 0)) {
+      return res.status(400).json({ error: 'Set how many units of that currency one US dollar buys' });
+    }
+    if (column === 'currency') {
+      if (!value) return res.status(400).json({ error: 'A currency is required' });
+    }
+    params.push(value);
+    sets.push(`${column} = $${params.length}`);
+  }
+  if (req.body?.active !== undefined) {
+    params.push(Boolean(req.body.active));
+    sets.push(`active = $${params.length}`);
+  }
+  if (!sets.length) return res.status(400).json({ error: 'Nothing to update' });
+  params.push(accountId);
+  const { rows } = await q(
+    `UPDATE payment_accounts SET ${sets.join(', ')}, updated_at = now() WHERE id = $${params.length} RETURNING *`,
+    params
+  );
+  if (!rows.length) return res.status(404).json({ error: 'Payment account not found' });
+  await logActivity(req.user.id, 'payment_account', `${req.user.name} updated the ${rows[0].currency} payment account “${rows[0].label}”`);
+  res.json({ account: withAmounts(rows[0]) });
+});
+
+router.delete('/payment-accounts/:id', async (req, res) => {
+  const accountId = Number(req.params.id);
+  if (!Number.isInteger(accountId) || accountId <= 0) {
+    return res.status(404).json({ error: 'Payment account not found' });
+  }
+  const { rows } = await q('DELETE FROM payment_accounts WHERE id = $1 RETURNING currency, label', [accountId]);
+  if (!rows.length) return res.status(404).json({ error: 'Payment account not found' });
+  await logActivity(req.user.id, 'payment_account', `${req.user.name} removed the ${rows[0].currency} payment account “${rows[0].label}”`);
+  res.status(204).end();
+});
+
 // ---- Station applications --------------------------------------------------
-// Listeners apply for a station, pay the licence fee by card and wait for review.
-// Approving opens the station — and its TV twin — in the applicant's own name.
+// Listeners apply for a station and settle the licence fee — by card, or by paying one of
+// the accounts above and handing over the proof. The control room verifies the proof,
+// which marks the fee paid, and then approving opens the station on the plan paid for.
+// Premium is what switches monetisation on: only a premium station may publish premium
+// and paid content and earn from it.
 router.get('/applications', async (req, res) => {
   const params = [];
   let where = '';
@@ -305,6 +422,44 @@ router.post('/applications/:id/fee', async (req, res) => {
   );
   if (!rows.length) return res.status(404).json({ error: 'Application not found' });
   await logActivity(req.user.id, 'station_review', `${req.user.name} marked the fee for ${rows[0].station_name} as ${paid ? 'collected' : 'uncollected'}`);
+  res.json({ application: rows[0] });
+});
+
+// The control room checked the applicant's payment proof. Verifying marks the licence fee
+// paid — which is what lets the application be approved and the station opened on the plan
+// the applicant chose; rejecting sends it back for a corrected payment.
+router.post('/applications/:id/proof', async (req, res) => {
+  const action = String(req.body?.action ?? '');
+  if (!['verify', 'reject'].includes(action)) {
+    return res.status(400).json({ error: 'Verify or reject the payment proof' });
+  }
+
+  const applicationId = Number(req.params.id);
+  if (!Number.isInteger(applicationId) || applicationId <= 0) {
+    return res.status(404).json({ error: 'Application not found' });
+  }
+  const { rows: found } = await q('SELECT * FROM station_applications WHERE id = $1', [applicationId]);
+  if (!found.length) return res.status(404).json({ error: 'Application not found' });
+  const application = found[0];
+  if (application.proof_status !== 'submitted') {
+    return res.status(409).json({ error: 'There is no payment proof waiting on that application' });
+  }
+
+  const verified = action === 'verify';
+  const note = String(req.body?.note ?? '').trim() || null;
+  const { rows } = await q(
+    `UPDATE station_applications SET
+       proof_status = $2, proof_review_note = $3, proof_reviewed_by = $4, proof_reviewed_at = now(),
+       fee_status = CASE WHEN $5 THEN 'paid' ELSE 'unpaid' END,
+       paid_at = CASE WHEN $5 THEN coalesce(paid_at, now()) ELSE null END
+     WHERE id = $1 RETURNING *`,
+    [application.id, verified ? 'verified' : 'rejected', note, req.user.id, verified]
+  );
+  await logActivity(
+    req.user.id,
+    'station_review',
+    `${req.user.name} ${verified ? 'verified' : 'could not verify'} the licence payment for ${application.station_name}`
+  );
   res.json({ application: rows[0] });
 });
 

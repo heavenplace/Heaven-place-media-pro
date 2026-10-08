@@ -2,7 +2,7 @@ import express from 'express';
 import { q } from '../db.js';
 import { auth } from '../auth.js';
 import { logActivity } from '../guards.js';
-import { safeOrigin, stationFee, stripeClient } from '../payments.js';
+import { licenceUnits, safeOrigin, stationFee, stripeClient } from '../payments.js';
 
 const router = express.Router();
 
@@ -76,6 +76,61 @@ router.post('/:id/checkout', auth(), async (req, res) => {
 
   await q('UPDATE station_applications SET checkout_session_id = $2 WHERE id = $1', [application.id, session.id]);
   res.json({ url: session.url, id: session.id });
+});
+
+// The applicant has sent the fee to one of the control room's accounts and hands over the
+// proof. The amount is derived from that account's rate, so it is exactly the plan's $5 /
+// $15 licence — never less or more. The control room verifies the proof, which marks the
+// fee paid and lets the station be opened on that plan.
+router.post('/:id/proof', auth(), async (req, res) => {
+  const applicationId = Number(req.params.id);
+  if (!Number.isInteger(applicationId) || applicationId <= 0) {
+    return res.status(404).json({ error: 'That application could not be found' });
+  }
+  const { rows } = await q('SELECT * FROM station_applications WHERE id = $1 AND user_id = $2', [
+    applicationId,
+    req.user.id
+  ]);
+  const application = rows[0];
+  if (!application) return res.status(404).json({ error: 'That application could not be found' });
+  if (application.fee_status === 'paid') return res.status(409).json({ error: 'That licence fee has already been paid' });
+
+  const accountId = Number(req.body?.payment_account_id);
+  if (!Number.isInteger(accountId) || accountId <= 0) {
+    return res.status(400).json({ error: 'Choose one of the payment accounts' });
+  }
+  const { rows: found } = await q('SELECT * FROM payment_accounts WHERE id = $1 AND active', [accountId]);
+  const account = found[0];
+  if (!account) return res.status(400).json({ error: 'Choose one of the payment accounts' });
+
+  const reference = String(req.body?.reference ?? '').trim();
+  if (!reference) return res.status(400).json({ error: 'Add the reference or transaction id from your payment' });
+
+  const amount = licenceUnits(account, application.plan);
+  if (!amount) return res.status(400).json({ error: 'That account has no exchange rate set — tell the control room' });
+
+  const { rows: updated } = await q(
+    `UPDATE station_applications SET
+       payment_account_id = $2, currency = $3, amount_units = $4, payment_reference = $5,
+       proof_url = $6, proof_note = $7, proof_status = 'submitted', proof_submitted_at = now(),
+       proof_review_note = null, proof_reviewed_by = null, proof_reviewed_at = null
+     WHERE id = $1 RETURNING *`,
+    [
+      application.id,
+      account.id,
+      account.currency,
+      amount,
+      reference,
+      String(req.body?.proof_url ?? '').trim() || null,
+      String(req.body?.note ?? '').trim() || null
+    ]
+  );
+  await logActivity(
+    req.user.id,
+    'payment',
+    `${req.user.name} sent the licence fee for ${application.station_name} (${reference})`
+  );
+  res.json({ application: updated[0] });
 });
 
 export default router;

@@ -91,6 +91,38 @@ export default function Applications() {
                         {application.fee_status}
                       </span>
                     </div>
+                    {application.proof_status && application.proof_status !== 'none' && (
+                      <div className="tiny muted">
+                        <span
+                          className={
+                            application.proof_status === 'verified'
+                              ? 'badge badge-ok'
+                              : application.proof_status === 'rejected'
+                              ? 'badge badge-warn'
+                              : 'badge'
+                          }
+                        >
+                          proof {application.proof_status}
+                        </span>
+                      </div>
+                    )}
+                    {application.payment_reference && (
+                      <div className="tiny muted">
+                        {Number(application.amount_units)} {application.currency} · ref {application.payment_reference}
+                        {application.proof_url && (
+                          <>
+                            {' · '}
+                            <a href={application.proof_url} target="_blank" rel="noreferrer">
+                              view proof
+                            </a>
+                          </>
+                        )}
+                      </div>
+                    )}
+                    {application.proof_note && <div className="tiny muted">{application.proof_note}</div>}
+                    {application.proof_review_note && (
+                      <div className="tiny muted">review: {application.proof_review_note}</div>
+                    )}
                   </td>
                   <td className="small muted">{timeAgo(application.created_at)}</td>
                   <td>
@@ -98,7 +130,37 @@ export default function Applications() {
                     {application.review_note && <div className="tiny muted">{application.review_note}</div>}
                   </td>
                   <td>
-                    <div className="row" style={{ gap: 6 }}>
+                    <div className="row" style={{ gap: 6, flexWrap: 'wrap' }}>
+                      {application.proof_status === 'submitted' && (
+                        <>
+                          <button
+                            className="btn btn-sm btn-primary"
+                            onClick={() =>
+                              post(
+                                `/admin/applications/${application.id}/proof`,
+                                { action: 'verify' },
+                                'Licence payment verified — the fee is paid and the station can be opened.'
+                              )
+                            }
+                          >
+                            Verify payment
+                          </button>
+                          <button
+                            className="btn btn-sm btn-danger"
+                            onClick={() => {
+                              const note = window.prompt('Why could the payment not be verified?');
+                              if (note === null) return;
+                              post(
+                                `/admin/applications/${application.id}/proof`,
+                                { action: 'reject', note },
+                                'Payment proof rejected.'
+                              );
+                            }}
+                          >
+                            Reject payment
+                          </button>
+                        </>
+                      )}
                       <button
                         className="btn btn-sm"
                         onClick={() =>
@@ -135,8 +197,10 @@ export default function Applications() {
       )}
 
       <p className="tiny muted" style={{ margin: 0 }}>
-        Approving opens the station on the plan the applicant paid for. A premium station can publish premium and paid
-        items, and its owner earns what listeners pay for them — settle those balances from the Revenue tab.
+        Verify a transfer payment to mark the fee paid — that is what lets the application be approved. Approving opens
+        the station on the plan the applicant paid for, and a premium station can publish premium and paid items, with
+        its owner earning what listeners pay for them (settle those balances from the Revenue tab). Set the accounts
+        applicants pay into on the Payment accounts tab.
       </p>
     </div>
   );
