@@ -1,12 +1,12 @@
-# Android build toolchain for the two StreamCast Pro apps.
+# Android build toolchain for the two native StreamCast Pro apps.
 #
 # Deliberately separate from docker-compose.base44.yml: this is a one-shot build,
 # not a service the app runs. It never touches the running stack.
 #
 #   docker compose -f docker-compose.mobile.yml run --rm android
 #
-# WEB_URL defaults to this environment's preview origin; set WEB_URL to build
-# the same APKs against a real domain.
+# API_BASE_URL defaults to this environment's API origin; set it to the deployed API
+# origin to build the same APKs against a real domain.
 name: streamcast-mobile
 
 services:
@@ -14,7 +14,7 @@ services:
     build: ./mobile
     working_dir: /app/mobile
     environment:
-      - WEB_URL=${WEB_URL:-}
+      - API_BASE_URL=${API_BASE_URL:-}
       - BASE44_PUBLIC_HOST_SUFFIX=${BASE44_PUBLIC_HOST_SUFFIX:-}
       - OUT_DIR=/app/web/public/downloads
       - KEYSTORE_DIR=/keys

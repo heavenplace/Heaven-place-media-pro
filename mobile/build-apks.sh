@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Builds the two StreamCast Pro Android apps:
+# Builds the two native StreamCast Pro Android apps (Kotlin + Jetpack Compose):
 #   listener -> StreamCast Pro          (pro.streamcast.listener)
 #   admin    -> StreamCast Control Room (pro.streamcast.controlroom)
 #
@@ -12,21 +12,21 @@
 #
 #   docker compose -f docker-compose.mobile.yml run --rm android
 #
-# WEB_URL is the live site the apps open — the single value to change when the
-# apps move onto their own domain. It is never committed to the repo.
+# API_BASE_URL is the API origin the apps call — the single value to change when they
+# move onto their own domain. It is baked into the build and never committed.
 set -euo pipefail
 
-if [ -z "${WEB_URL:-}" ]; then
-  WEB_URL="https://3000-${BASE44_PUBLIC_HOST_SUFFIX:?set WEB_URL or BASE44_PUBLIC_HOST_SUFFIX}"
+if [ -z "${API_BASE_URL:-}" ]; then
+  API_BASE_URL="https://8000-${BASE44_PUBLIC_HOST_SUFFIX:?set API_BASE_URL or BASE44_PUBLIC_HOST_SUFFIX}"
 fi
-export WEB_URL="${WEB_URL%/}"
+export API_BASE_URL="${API_BASE_URL%/}"
 
 OUT_DIR="${OUT_DIR:-/app/web/public/downloads}"
 KEYSTORE="${KEYSTORE_DIR:-/keys}/streamcast-dev.jks"
 KEY_PASS="${ANDROID_KEYSTORE_PASSWORD:-streamcast-dev}"
 KEY_ALIAS="streamcast"
 
-echo "==> Building against $WEB_URL"
+echo "==> Building against the API at $API_BASE_URL"
 
 # Development signing key, created once and kept in the 'keystore' volume so
 # later builds can update the APKs already installed. Replace it with a key you
@@ -41,33 +41,27 @@ if [ ! -f "$KEYSTORE" ]; then
 fi
 
 mkdir -p "$OUT_DIR"
+cd /app/mobile/native
 
 build_app() {
-  local name="$1" start_path="$2"
-  cd "/app/mobile/$name"
+  local name="$1" module="$2"
 
-  echo "==> $name: preparing the Capacitor project"
-  npm install --no-audit --no-fund --loglevel=error
-  [ -d android ] || npx cap add android
-  export START_PATH="$start_path"
-  npx cap sync android
+  echo "==> $module: assembling the debug APK"
+  gradle --no-daemon --console=plain ":${module}:assembleDebug"
 
-  echo "==> $name: assembling the debug APK"
-  (cd android && ./gradlew --no-daemon --console=plain assembleDebug)
-
-  echo "==> $name: assembling the signed release APK"
-  (cd android && ./gradlew --no-daemon --console=plain assembleRelease \
+  echo "==> $module: assembling the signed release APK"
+  gradle --no-daemon --console=plain ":${module}:assembleRelease" \
     -Pandroid.injected.signing.store.file="$KEYSTORE" \
     -Pandroid.injected.signing.store.password="$KEY_PASS" \
     -Pandroid.injected.signing.key.alias="$KEY_ALIAS" \
-    -Pandroid.injected.signing.key.password="$KEY_PASS")
+    -Pandroid.injected.signing.key.password="$KEY_PASS"
 
-  cp android/app/build/outputs/apk/debug/app-debug.apk "$OUT_DIR/streamcast-$name-debug.apk"
-  cp android/app/build/outputs/apk/release/app-release.apk "$OUT_DIR/streamcast-$name-release.apk"
+  cp "${module}/build/outputs/apk/debug/${module}-debug.apk" "$OUT_DIR/streamcast-$name-debug.apk"
+  cp "${module}/build/outputs/apk/release/${module}-release.apk" "$OUT_DIR/streamcast-$name-release.apk"
 }
 
-build_app listener ""
-build_app admin "/admin"
+build_app listener listener
+build_app admin admin
 
 echo "==> APKs ready in $OUT_DIR"
 ls -lh "$OUT_DIR"/*.apk
