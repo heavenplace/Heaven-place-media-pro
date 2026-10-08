@@ -54,6 +54,7 @@ sealed interface Screen {
     data object NowPlaying : Screen
     data object Account : Screen
     data object Studio : Screen
+    data object Licence : Screen
 }
 
 /** The listener app: sign in once, then browse and play behind one persistent player. */
@@ -102,7 +103,8 @@ fun ListenerApp(session: Session) {
                 is Screen.Podcasts -> PodcastsScreen(context)
                 is Screen.Station -> StationScreen(current.id, signedIn, go, context)
                 is Screen.NowPlaying -> NowPlayingScreen(context)
-                is Screen.Studio -> StudioScreen()
+                is Screen.Studio -> StudioScreen { go(Screen.Licence) }
+                is Screen.Licence -> LicenceScreen()
                 is Screen.Account -> AccountScreen(signedIn) {
                     PlayerController.stop()
                     session.clear()
@@ -142,6 +144,7 @@ private fun TopBar(screen: Screen, account: Account, go: (Screen) -> Unit) {
             NavChip("TV", screen is Screen.Browse && screen.kind == "tv") { go(Screen.Browse("tv")) }
             NavChip("Podcasts", screen is Screen.Podcasts) { go(Screen.Podcasts) }
             NavChip("Studio", screen is Screen.Studio) { go(Screen.Studio) }
+            NavChip("Licence", screen is Screen.Licence) { go(Screen.Licence) }
             NavChip("Account", screen is Screen.Account) { go(Screen.Account) }
         }
         Spacer(Modifier.height(8.dp))

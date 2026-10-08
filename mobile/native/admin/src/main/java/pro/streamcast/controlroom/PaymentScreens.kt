@@ -88,7 +88,14 @@ private fun accountOf(row: JSONObject) = PaymentAccount(
     premiumLabel = row.optString("premium_label")
 )
 
-private val METHODS = listOf("bank" to "Bank", "crypto" to "Crypto", "other" to "Other")
+// The same receiving accounts the web's Payments desk offers — a PrcPay account settles a
+// licence fee on its own the moment the money lands (see /api/prcpay/webhook).
+private val METHODS = listOf(
+    "bank" to "Bank",
+    "crypto" to "Crypto",
+    "prcpay" to "PrcPay",
+    "other" to "Other"
+)
 
 @Composable
 fun PaymentsScreen() {

@@ -92,7 +92,7 @@ private val WINDOWS = listOf(
  * broadcast from the camera stays a web-only feature.
  */
 @Composable
-fun StudioScreen() {
+fun StudioScreen(onOpenLicence: () -> Unit = {}) {
     var tab by remember { mutableStateOf("overview") }
     var picked by remember { mutableStateOf<Int?>(null) }
     var notice by remember { mutableStateOf<String?>(null) }
@@ -141,11 +141,15 @@ fun StudioScreen() {
                 if (tab == "podcasts") {
                     PodcastsTab(shows.data.orEmpty(), notify, fail, reload)
                 } else {
-                    Message(
-                        stations.error
-                            ?: "You do not own a station yet — the control room assigns stations to accounts. " +
-                            "The Podcasts tab works without one."
-                    )
+                    Column(Modifier.fillMaxSize().padding(14.dp)) {
+                        Message(
+                            stations.error
+                                ?: "You do not own a station yet. Apply for a licence in the Licence tab — pay the " +
+                                "fee with PrcPay and the control room opens your station. The Podcasts tab works " +
+                                "without one."
+                        )
+                        PrimaryButton("Apply for a station licence") { onOpenLicence() }
+                    }
                 }
             } else {
                 when (tab) {

@@ -189,10 +189,15 @@ key — a placeholder only makes the app start, it does not take money.
     `PRCPAY_BASE_URL` names a host that answers, a charge fails with a 502 and nothing is
     charged.
   - **Pay-in settles inside the request — there is no redirect to come back from.**
-    `POST /api/prcpay/checkout` (`{ kind: 'premium' | 'download', account, currency }`)
-    debits the payer's own PrcPay account (the card on it) and grants the membership or
-    download immediately. `web/src/components/PrcPayButton.jsx` is that control — it sits
-    beside the Stripe buttons on the Premium page and on every paid download.
+    `POST /api/prcpay/checkout` (`{ kind: 'premium' | 'download' | 'licence', account,
+    currency }`, with `media_id` or `application_id` for the last two) debits the payer's
+    own PrcPay account (the card on it) and grants the membership or download immediately.
+    For a **licence** it marks the application's fee paid **and** verified in the same
+    request (`currency`, `amount_units`, `payment_reference`, note "Settled on PrcPay") —
+    exactly the state the settlement webhook writes when the money arrives unannounced,
+    which then finds the row already paid and does nothing. A fee already paid is refused
+    with 409. `web/src/components/PrcPayButton.jsx` is that control for Premium and
+    downloads; the licence is paid from the Android listener app's **Licence** tab.
   - **Payouts are instant too.** `creditEarnings` (`api/payments.js`) transfers each sale to
     the publishing station owner's own PrcPay account as it is recorded and writes the
     `payouts` row itself (`provider = 'prcpay'`), which is what marks the earning settled.
@@ -348,6 +353,12 @@ docker compose -f docker-compose.mobile.yml run --rm android
   - Podcasts create shows, publish episodes (upload or link) and delete episodes.
   - Settings renames the station, edits its description and uploads artwork
     (`PATCH /api/stations/:id`).
+  - The **Licence** tab (the header chip beside Studio, `LicenceScreen.kt`) applies for a
+    station licence — name, description, FM / FM + TV, standard / premium — and pays the
+    fee instantly from the PrcPay account the form names (`POST /api/applications`, then
+    `POST /api/prcpay/checkout` with `kind = 'licence'`), against the same rows the web's
+    `/apply` page writes. The studio's empty state offers it too. Card checkout and the
+    manual transfer-proof upload stay web-only.
   - **Still web-only**: broadcasting from the phone's own camera/mic (`LiveBroadcaster.jsx`
     records canvas slices into `POST /api/live/:id/chunk` — Android's `MediaRecorder` has
     no incremental webm output, so the native studio does not offer it), premium

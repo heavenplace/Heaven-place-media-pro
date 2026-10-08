@@ -293,3 +293,42 @@ fun MediaItem.toPlayable(station: String? = null) = Playable(
     live = false,
     mediaId = id
 )
+
+/**
+ * A licence application, as the applicant sees it. The fee is paid by card, by transfer to
+ * a control-room account with proof, or instantly through PrcPay — which settles inside the
+ * request and leaves the application paid and verified.
+ */
+data class LicenceApplication(
+    val id: Int,
+    val stationName: String,
+    val coverage: String,
+    val plan: String,
+    val feeCents: Int,
+    val feeStatus: String,
+    val status: String,
+    val currency: String?,
+    val reference: String?,
+    val proofStatus: String,
+    val reviewNote: String?,
+    val createdAt: String?
+) {
+    val coverageLabel: String get() = if (coverage == "fm_tv") "FM + TV" else "FM only"
+    val planLabel: String get() = plan.replaceFirstChar { it.uppercase() }
+    val feePaid: Boolean get() = feeStatus == "paid"
+}
+
+fun licenceOf(row: JSONObject) = LicenceApplication(
+    id = row.optInt("id"),
+    stationName = row.optString("station_name"),
+    coverage = row.optString("coverage", "fm"),
+    plan = row.optString("plan", "standard"),
+    feeCents = row.optInt("fee_cents"),
+    feeStatus = row.optString("fee_status", "unpaid"),
+    status = row.optString("status", "pending"),
+    currency = row.text("currency"),
+    reference = row.text("payment_reference"),
+    proofStatus = row.optString("proof_status", "none"),
+    reviewNote = row.text("review_note"),
+    createdAt = row.text("created_at")
+)
