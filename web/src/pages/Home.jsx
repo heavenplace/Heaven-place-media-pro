@@ -30,6 +30,7 @@ export default function Home() {
       subtitle: `${session.station_name} · on air`,
       type: session.media_type || session.kind || 'audio',
       url: session.media_url,
+      artwork: session.station_artwork,
       live: true
     });
   };
@@ -126,7 +127,7 @@ export default function Home() {
               <MediaRow
                 key={item.id}
                 item={item}
-                onPlay={(m) => play({ id: m.id, title: m.title, subtitle: m.station_name, type: m.type, url: m.url })}
+                onPlay={(m) => play({ id: m.id, title: m.title, subtitle: m.station_name, type: m.type, url: m.url, artwork: m.station_artwork })}
               />
             ))}
           </div>

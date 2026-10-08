@@ -60,7 +60,8 @@ export default function Favorites() {
                           title: favorite.media_title,
                           subtitle: favorite.station_name,
                           type: favorite.media_type,
-                          url: favorite.media_url
+                          url: favorite.media_url,
+                          artwork: favorite.station_artwork
                         })
                       }
                     >

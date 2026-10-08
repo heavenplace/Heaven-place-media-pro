@@ -69,6 +69,7 @@ export default function Podcasts() {
                       subtitle: `${session.station_name} · on air`,
                       type: 'audio',
                       url: session.media_url,
+                      artwork: session.station_artwork,
                       live: true
                     })
                   }
@@ -126,7 +127,7 @@ export default function Podcasts() {
                   </div>
                   <button
                     className="btn btn-sm btn-primary"
-                    onClick={() => play({ title: item.title, subtitle: selected.title, type: 'audio', url: item.url })}
+                    onClick={() => play({ title: item.title, subtitle: selected.title, type: 'audio', url: item.url, artwork: selected.artwork_url })}
                   >
                     Play
                   </button>

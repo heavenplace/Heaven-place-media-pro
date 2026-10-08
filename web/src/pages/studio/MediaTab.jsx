@@ -50,7 +50,7 @@ export default function MediaTab({ station, media, reload, notify, fail }) {
                   <div className="row" style={{ gap: 8 }}>
                     <button
                       className="btn btn-sm"
-                      onClick={() => play({ id: item.id, title: item.title, subtitle: item.station_name, type: item.type, url: item.url })}
+                      onClick={() => play({ id: item.id, title: item.title, subtitle: item.station_name, type: item.type, url: item.url, artwork: item.station_artwork })}
                     >
                       Play
                     </button>

@@ -5,7 +5,7 @@ import { canManageStation, hasDownloadEntitlement, isPremium, logActivity } from
 
 const router = express.Router();
 
-const SELECT = `SELECT m.*, s.name AS station_name, s.kind AS station_kind,
+const SELECT = `SELECT m.*, s.name AS station_name, s.kind AS station_kind, s.artwork_url AS station_artwork,
   (SELECT count(*)::int FROM entitlements e WHERE e.kind = 'download' AND e.media_id = m.id) AS unlock_count
   FROM media m JOIN stations s ON s.id = m.station_id`;
 
