@@ -64,6 +64,13 @@ app.use('/api/admin', adminRoutes);
 app.use((req, res) => res.status(404).json({ error: `No route for ${req.method} ${path.posix.join('/', req.path)}` }));
 
 app.use((error, _req, res, _next) => {
+  // A body the client could not serialize is the client's mistake, not a server
+  // fault: answer 400 with one short line instead of dumping a parse stack (and the
+  // offending body) into the service log.
+  if (error.type === 'entity.parse.failed') {
+    console.warn('[api] rejected a request with a malformed JSON body');
+    return res.status(400).json({ error: 'The request body is not valid JSON' });
+  }
   console.error('[api]', error);
   const status = error.status || (error.code === 'LIMIT_FILE_SIZE' ? 413 : 500);
   res.status(status).json({ error: error.message || 'Something went wrong' });

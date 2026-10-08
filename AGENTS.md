@@ -307,3 +307,10 @@ the check script's fault, not the app's:
 - A `psql` capture that leaks its command tag into a later statement shows up as a
   syntax error in the `db` log; a leaked tag inside a JSON body shows up as a
   body-parser 400 in the `api` log. Both are the script, not the app.
+- A script that interpolates an empty variable into a JSON body (`"station_id":$ID,`
+  with `ID` unset) sends invalid JSON. Since the fix in `server.js`, the API answers
+  `400 {"error":"The request body is not valid JSON"}` and logs a single
+  `[api] rejected a request with a malformed JSON body` line — no stack trace. An
+  `ERROR: ... violates foreign key constraint "stations_owner_id_fkey"` in the `db` log
+  with `owner_id=(0)` is a script inserting a station for a user id it never resolved;
+  the API resolves the owner itself and rejects an unknown one with 400.
