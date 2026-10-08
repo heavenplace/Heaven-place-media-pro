@@ -1,12 +1,21 @@
 import { useEffect, useState } from 'react';
 import { api } from '../../api.js';
 
-const EMPTY = { account_name: '', bank_name: '', account_number: '', routing_number: '', note: '' };
+const EMPTY = {
+  account_name: '',
+  bank_name: '',
+  account_number: '',
+  routing_number: '',
+  prcpay_account: '',
+  prcpay_currency: 'USD',
+  note: ''
+};
 
 /**
- * Where this account's settled earnings are sent. One profile covers every station the
- * account owns; the control room reads it when it records a payout. The transfer itself
- * happens outside the app — this is only the instruction for it.
+ * Where this account's earnings are sent. One profile covers every station the account
+ * owns. An owner who names a PrcPay account is paid the moment an item sells — the
+ * money lands there instantly; the bank details are the alternative, and what the
+ * control room uses to settle by transfer.
  */
 export default function PayoutSettings({ notify, fail }) {
   const [draft, setDraft] = useState(EMPTY);
@@ -17,12 +26,15 @@ export default function PayoutSettings({ notify, fail }) {
     api('/earnings/account')
       .then((data) => {
         if (!data.account) return;
-        const { account_name, bank_name, account_number, routing_number, note } = data.account;
+        const { account_name, bank_name, account_number, routing_number, prcpay_account, prcpay_currency, note } =
+          data.account;
         setDraft({
           account_name,
-          bank_name,
-          account_number,
+          bank_name: bank_name ?? '',
+          account_number: account_number ?? '',
           routing_number: routing_number ?? '',
+          prcpay_account: prcpay_account ?? '',
+          prcpay_currency: prcpay_currency ?? 'USD',
           note: note ?? ''
         });
         setSaved(true);
@@ -49,9 +61,29 @@ export default function PayoutSettings({ notify, fail }) {
     <form className="panel stack" onSubmit={submit}>
       <h3>Payout details</h3>
       <p className="muted small" style={{ margin: 0 }}>
-        Where the control room sends the earnings from every station on this account. Use the name on the bank
-        account, not the station name.
+        Where the earnings from every station on this account are sent. Name a PrcPay account to be paid the
+        instant an item sells, or leave the bank details for the control room to settle by transfer. Use the
+        name on the account, not the station name.
       </p>
+
+      <div className="row">
+        <div className="grow">
+          <label>PrcPay account (instant payouts)</label>
+          <input
+            value={draft.prcpay_account}
+            onChange={(event) => setDraft({ ...draft, prcpay_account: event.target.value })}
+            placeholder="Your PrcPay account — every sale is transferred here at once"
+          />
+        </div>
+        <div style={{ width: 140 }}>
+          <label>Settles in</label>
+          <input
+            value={draft.prcpay_currency}
+            onChange={(event) => setDraft({ ...draft, prcpay_currency: event.target.value.toUpperCase() })}
+            placeholder="USD"
+          />
+        </div>
+      </div>
 
       <div className="row">
         <div className="grow">
@@ -67,7 +99,7 @@ export default function PayoutSettings({ notify, fail }) {
           <input
             value={draft.bank_name}
             onChange={(event) => setDraft({ ...draft, bank_name: event.target.value })}
-            required
+            required={!draft.prcpay_account}
           />
         </div>
       </div>
@@ -78,7 +110,7 @@ export default function PayoutSettings({ notify, fail }) {
           <input
             value={draft.account_number}
             onChange={(event) => setDraft({ ...draft, account_number: event.target.value })}
-            required
+            required={!draft.prcpay_account}
           />
         </div>
         <div className="grow">

@@ -23,6 +23,11 @@
       "name": "STRIPE_WEBHOOK_SECRET",
       "description": "Stripe Dashboard → Developers → Webhooks → add endpoint <api origin>/api/payments/webhook for checkout.session.completed, then copy its signing secret (whsec_…). Optional: the back-from-checkout confirmation already grants access, this is the authoritative path for a real deployment.",
       "requiredAtBoot": false
+    },
+    {
+      "name": "PRCPAY_API_KEY",
+      "description": "PrcPay merchant API key (from your PrcPay dashboard). Switches on PrcPay — instant pay-ins by PrcPay card and instant payouts to owners' PrcPay accounts. PrcPay publishes no API reference, so confirm the three non-secret values this app assumes and add any that differ here as well: PRCPAY_BASE_URL (default https://api.prcpay.com), PRCPAY_ACCOUNT (default streamcastpro), PRCPAY_WEBHOOK_IPS (comma-separated PrcPay source addresses; without it the settlement webhook refuses every caller).",
+      "requiredAtBoot": false
     }
   ]
 }

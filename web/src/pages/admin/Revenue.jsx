@@ -39,7 +39,7 @@ export default function Revenue() {
     <div className="stack" style={{ gap: 18 }}>
       <div className="between">
         <h2>Station revenue</h2>
-        <span className="tiny muted">Listeners pay by card; the control room settles each owner's balance</span>
+        <span className="tiny muted">Listeners pay by card or PrcPay; owners with a PrcPay account are paid instantly, the rest settle here</span>
       </div>
 
       {error && <div className="notice notice-error">{error}</div>}
@@ -150,6 +150,7 @@ export default function Revenue() {
                 <tr>
                   <th>Owner</th>
                   <th>Amount</th>
+                  <th>Rail</th>
                   <th>Note</th>
                   <th>Recorded</th>
                 </tr>
@@ -159,6 +160,7 @@ export default function Revenue() {
                   <tr key={payout.id}>
                     <td>{payout.owner_name || '—'}</td>
                     <td>{formatMoney(payout.amount_cents)}</td>
+                    <td className="small muted">{payout.provider === 'prcpay' ? 'PrcPay (instant)' : 'Manual'}</td>
                     <td className="small muted">{payout.note || '—'}</td>
                     <td className="small muted">{timeAgo(payout.created_at)}</td>
                   </tr>

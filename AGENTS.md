@@ -53,6 +53,10 @@ when the server is actually set up for them.
 | `GOOGLE_CLIENT_ID` | the Google sign-in button and the server-side token check |
 | `STRIPE_SECRET_KEY` | card checkout for Premium memberships and paid downloads |
 | `STRIPE_WEBHOOK_SECRET` | the Stripe webhook signature — optional |
+| `PRCPAY_API_KEY` | PrcPay — instant pay-ins and instant payouts (see "PrcPay" below) |
+| `PRCPAY_BASE_URL` | the PrcPay API host — defaults to `https://api.prcpay.com`, confirm it |
+| `PRCPAY_ACCOUNT` | this platform's own PrcPay account — defaults to `streamcastpro` |
+| `PRCPAY_WEBHOOK_IPS` | comma-separated PrcPay source addresses; without it the settlement webhook trusts nobody |
 | `PREMIUM_PRICE_CENTS` | Premium price in cents (default `600`) |
 | `WEB_ORIGIN` | an extra origin allowed as a checkout return url, when not already in `CORS_ORIGIN` |
 
@@ -139,6 +143,35 @@ key — a placeholder only makes the app start, it does not take money.
   BEFORE `express.json()` because the signature check needs the raw body — keep that
   order. The manual request/approval flow is unchanged and is what the Premium page
   falls back to when no Stripe key is set.
+- **PrcPay is the instant rail beside Stripe.** PrcPay publishes no API reference, so the
+  contract the app was built against lives in `api/prcpay.js` and everything that could
+  differ from it is configuration rather than code: `PRCPAY_BASE_URL` (the API host),
+  `PRCPAY_ACCOUNT` (this platform's own PrcPay account — `streamcastpro` — sent as
+  `merchant`), and the key as `Authorization: Bearer`. A charge is
+  `POST /payments { merchant, account, amount, currency, reference, description }` and a
+  transfer is `POST /payouts` in the same shape; amounts are **decimal in the currency's
+  own units, never cents**. Every PrcPay currency is accepted except `PRCP` — PrcPay's own
+  token — which `POST /api/prcpay/checkout` refuses. Confirm the host before going live:
+  until `PRCPAY_BASE_URL` names the real PrcPay, a charge fails with a 502 and nothing is
+  charged.
+  - **Pay-in settles inside the request — there is no redirect to come back from.**
+    `POST /api/prcpay/checkout` (`{ kind: 'premium' | 'download', account, currency }`)
+    debits the payer's own PrcPay account (the card on it) and grants the membership or
+    download immediately. `web/src/components/PrcPayButton.jsx` is that control — it sits
+    beside the Stripe buttons on the Premium page and on every paid download.
+  - **Payouts are instant too.** `creditEarnings` (`api/payments.js`) transfers each sale to
+    the publishing station owner's own PrcPay account as it is recorded and writes the
+    `payouts` row itself (`provider = 'prcpay'`), which is what marks the earning settled.
+    An owner who has not named a PrcPay account stays on the control room's manual ledger
+    exactly as before, so both shapes coexist. A PrcPay failure is logged and leaves the
+    sale on that ledger rather than losing it.
+  - **The control room takes PrcPay as a receiving account** — `method = 'prcpay'` in
+    `payment_accounts`, added from the Payments desk like any other account. A licence fee
+    paid into it is settled by PrcPay's own notification: `POST /api/prcpay/webhook` marks
+    the application paid **and** verified, so the station opens without anyone checking a
+    screenshot. Notifications carry no signature, so the source address list in
+    `PRCPAY_WEBHOOK_IPS` is the whole check — with it unset the endpoint refuses every
+    caller (403).
 - **Stations are licensed, and listeners apply for one.** `web/src/pages/Apply.jsx`
   (`/apply`) offers **FM only** or **FM + TV** and a licence: **standard $5** or
   **premium $15** (`STATION_FEE_STANDARD_CENTS` / `STATION_FEE_PREMIUM_CENTS`, published
@@ -169,7 +202,9 @@ key — a placeholder only makes the app start, it does not take money.
   (`GET /api/admin/earnings`) lists owners with earned/settled/outstanding, every sale and
   the payout history, and `POST /api/admin/payouts` writes one `payouts` row for an owner's
   whole outstanding balance and marks those `earnings` rows settled. Nothing is transferred
-  by the app — the money moves outside it, and the payout row is the record.
+  by the app — the money moves outside it and the payout row is the record — **except** for
+  an owner who has set a PrcPay account: those sales are transferred to it instantly (see
+  "PrcPay" below) and reach this ledger already settled.
 - **Owners leave the control room somewhere to send the money.** `payout_accounts` (one row
   per user) holds `account_name`, `bank_name`, `account_number`, an optional
   `routing_number` and a free-text `note`. The owner enters them in the studio's **Station
@@ -178,7 +213,9 @@ key — a placeholder only makes the app start, it does not take money.
   tab shows the details beside each owner and the payout confirmation names where the money
   is going. They are kept as typed — a record for a manual transfer, not a payment
   credential held by a provider — and the API returns them only to the owning account and
-  to admins.
+  to admins. A `prcpay_account` (with the `prcpay_currency` it settles in) is the one field
+  that is a payment destination rather than an instruction: setting it switches that
+  owner's sales to instant PrcPay payouts, and the bank fields then become optional.
 - **Moderation** is the control room's review desk (`web/src/pages/admin/Moderation.jsx`,
   the Moderation tab). It lists creator-published media — uploads, phone recordings and
   Relive captures — with the station and the owner behind each item, and offers four

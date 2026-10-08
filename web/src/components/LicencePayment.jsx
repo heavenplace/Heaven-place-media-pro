@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { api, formatMoney } from '../api.js';
 import FileDrop from './FileDrop.jsx';
 
-const METHOD_LABEL = { bank: 'Bank transfer', crypto: 'Cryptocurrency', other: 'Other' };
+const METHOD_LABEL = { bank: 'Bank transfer', crypto: 'Cryptocurrency', prcpay: 'PrcPay', other: 'Other' };
 
 /**
  * Paying the licence fee by transfer instead of card. The control room sets up accounts in

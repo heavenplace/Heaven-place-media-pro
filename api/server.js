@@ -14,9 +14,11 @@ import applicationRoutes from './routes/applications.js';
 import paymentAccountRoutes from './routes/paymentAccounts.js';
 import earningsRoutes from './routes/earnings.js';
 import paymentRoutes from './routes/payments.js';
+import prcpayRoutes from './routes/prcpay.js';
 import adminRoutes from './routes/admin.js';
 import { googleEnabled } from './google.js';
 import { PREMIUM_PRICE_CENTS, STATION_FEES, paymentsEnabled, webhook as stripeWebhook } from './payments.js';
+import { prcpayEnabled } from './prcpay.js';
 
 const app = express();
 const PORT = Number(process.env.PORT) || 8000;
@@ -48,6 +50,7 @@ app.get('/api/config', (_req, res) =>
   res.json({
     google_client_id: googleEnabled() ? process.env.GOOGLE_CLIENT_ID : null,
     payments_enabled: paymentsEnabled(),
+    prcpay_enabled: prcpayEnabled(),
     premium_price_cents: PREMIUM_PRICE_CENTS,
     station_fees: STATION_FEES
   })
@@ -66,6 +69,7 @@ app.use('/api/applications', applicationRoutes);
 app.use('/api/payment-accounts', paymentAccountRoutes);
 app.use('/api/earnings', earningsRoutes);
 app.use('/api/payments', paymentRoutes);
+app.use('/api/prcpay', prcpayRoutes);
 app.use('/api/admin', adminRoutes);
 
 app.use((req, res) => res.status(404).json({ error: `No route for ${req.method} ${path.posix.join('/', req.path)}` }));

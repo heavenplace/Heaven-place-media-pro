@@ -4,6 +4,7 @@ import { api, formatMoney } from '../api.js';
 import { useAuth } from '../AuthContext.jsx';
 import { useConfig } from '../config.js';
 import { Empty, MediaRow } from '../components/Cards.jsx';
+import PrcPayButton from '../components/PrcPayButton.jsx';
 import { usePlayer } from '../components/Player.jsx';
 
 export default function Premium() {
@@ -113,11 +114,16 @@ export default function Premium() {
                 ? ` — renews ${new Date(mine.subscription.current_period_end).toLocaleDateString()}`
                 : ''}
             </div>
-          ) : config?.payments_enabled ? (
+          ) : config?.payments_enabled || config?.prcpay_enabled ? (
             <div className="stack" style={{ gap: 8 }}>
-              <button className="btn btn-primary" onClick={() => startCheckout('premium')} disabled={busy}>
-                {busy ? <span className="spinner" /> : `Subscribe by card — ${formatMoney(config.premium_price_cents)}/mo`}
-              </button>
+              {config?.payments_enabled && (
+                <button className="btn btn-primary" onClick={() => startCheckout('premium')} disabled={busy}>
+                  {busy ? <span className="spinner" /> : `Subscribe by card — ${formatMoney(config.premium_price_cents)}/mo`}
+                </button>
+              )}
+              {config?.prcpay_enabled && (
+                <PrcPayButton kind="premium" amountCents={config.premium_price_cents} onDone={load} />
+              )}
               <button className="btn btn-sm" onClick={askPremium}>Ask the control room instead</button>
             </div>
           ) : (
@@ -130,7 +136,9 @@ export default function Premium() {
         <div className="between">
           <h2>Paid downloads</h2>
           <span className="tiny muted">
-            {config?.payments_enabled ? 'Buy with a card, or ask the control room to unlock one' : 'Request an item and the control room unlocks it'}
+            {config?.payments_enabled || config?.prcpay_enabled
+              ? 'Buy with a card or PrcPay, or ask the control room to unlock one'
+              : 'Request an item and the control room unlocks it'}
           </span>
         </div>
         {paid.length === 0 ? (

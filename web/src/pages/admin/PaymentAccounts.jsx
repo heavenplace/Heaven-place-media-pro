@@ -5,6 +5,7 @@ import { Empty } from '../../components/Cards.jsx';
 const METHODS = [
   { id: 'bank', label: 'Bank transfer' },
   { id: 'crypto', label: 'Cryptocurrency' },
+  { id: 'prcpay', label: 'PrcPay' },
   { id: 'other', label: 'Other' }
 ];
 

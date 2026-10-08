@@ -255,6 +255,17 @@ ALTER TABLE station_applications ADD COLUMN IF NOT EXISTS proof_submitted_at tim
 ALTER TABLE station_applications ADD COLUMN IF NOT EXISTS proof_reviewed_by integer REFERENCES users(id) ON DELETE SET NULL;
 ALTER TABLE station_applications ADD COLUMN IF NOT EXISTS proof_reviewed_at timestamptz;
 ALTER TABLE station_applications ADD COLUMN IF NOT EXISTS proof_review_note text;
+-- PrcPay: an owner's own PrcPay account (and the currency it settles in) is where the
+-- instant transfer goes, so the bank fields are only needed by owners who have not set
+-- one. A payout row records which rail moved the money and the provider's reference.
+ALTER TABLE payout_accounts ADD COLUMN IF NOT EXISTS prcpay_account text;
+ALTER TABLE payout_accounts ADD COLUMN IF NOT EXISTS prcpay_currency text;
+ALTER TABLE payout_accounts ALTER COLUMN bank_name DROP NOT NULL;
+ALTER TABLE payout_accounts ALTER COLUMN account_number DROP NOT NULL;
+ALTER TABLE payouts ADD COLUMN IF NOT EXISTS provider text;
+ALTER TABLE payouts ADD COLUMN IF NOT EXISTS reference text;
+ALTER TABLE earnings ADD COLUMN IF NOT EXISTS payment_ref text;
+CREATE UNIQUE INDEX IF NOT EXISTS earnings_payment_ref_idx ON earnings (payment_ref) WHERE payment_ref IS NOT NULL;
 `;
 
 export async function ensureSchema() {

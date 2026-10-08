@@ -41,12 +41,17 @@ router.get('/mine', auth(), async (req, res) => {
 
 // Where this owner wants settled earnings sent. One profile per account — an owner can
 // have several stations — and the control room reads it when it records a manual payout.
-const ACCOUNT_FIELDS = ['account_name', 'bank_name', 'account_number', 'routing_number', 'note'];
+// An owner who names a PrcPay account is paid instantly instead: every sale is
+// transferred there as it lands (`settleInstantly` in api/payments.js), so the bank
+// fields are only needed by owners who have not set one.
+const ACCOUNT_FIELDS = ['account_name', 'bank_name', 'account_number', 'routing_number', 'prcpay_account', 'prcpay_currency', 'note'];
 
 const cleanAccount = (body) => {
   const account = Object.fromEntries(ACCOUNT_FIELDS.map((name) => [name, String(body?.[name] ?? '').trim()]));
   account.routing_number ||= null;
   account.note ||= null;
+  account.prcpay_account ||= null;
+  account.prcpay_currency = account.prcpay_currency ? account.prcpay_currency.toUpperCase() : null;
   return account;
 };
 
@@ -57,23 +62,33 @@ router.get('/account', auth(), async (req, res) => {
 
 router.put('/account', auth(), async (req, res) => {
   const account = cleanAccount(req.body);
-  if (!account.account_name || !account.bank_name || !account.account_number) {
-    return res.status(400).json({ error: 'Account holder, bank name and account number are required' });
+  if (!account.account_name) {
+    return res.status(400).json({ error: 'The account holder is required' });
+  }
+  // A PrcPay account is somewhere to send the money on its own; the bank details are
+  // the alternative, and were required of everyone before PrcPay existed.
+  if (!account.prcpay_account && (!account.bank_name || !account.account_number)) {
+    return res.status(400).json({
+      error: 'Add a PrcPay account, or the bank name and account number to be paid by transfer'
+    });
   }
   const { rows } = await q(
-    `INSERT INTO payout_accounts (user_id, account_name, bank_name, account_number, routing_number, note)
-     VALUES ($1,$2,$3,$4,$5,$6)
+    `INSERT INTO payout_accounts (user_id, account_name, bank_name, account_number, routing_number, prcpay_account, prcpay_currency, note)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
      ON CONFLICT (user_id) DO UPDATE SET
        account_name = excluded.account_name, bank_name = excluded.bank_name,
        account_number = excluded.account_number, routing_number = excluded.routing_number,
+       prcpay_account = excluded.prcpay_account, prcpay_currency = excluded.prcpay_currency,
        note = excluded.note, updated_at = now()
      RETURNING *`,
     [
       req.user.id,
       account.account_name,
-      account.bank_name,
-      account.account_number,
+      account.bank_name || null,
+      account.account_number || null,
       account.routing_number,
+      account.prcpay_account,
+      account.prcpay_currency,
       account.note
     ]
   );

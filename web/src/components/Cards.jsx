@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { api, formatDuration, formatMoney, timeAgo } from '../api.js';
 import { useAuth } from '../AuthContext.jsx';
 import { useConfig } from '../config.js';
+import PrcPayButton from './PrcPayButton.jsx';
 
 export function LiveBadge() {
   return (
@@ -149,6 +150,9 @@ export function DownloadButton({ item, onChanged }) {
         <button className="btn btn-sm btn-primary" onClick={buy} disabled={busy}>
           Buy {formatMoney(item.price_cents)}
         </button>
+      )}
+      {config?.prcpay_enabled && item.access === 'paid' && (
+        <PrcPayButton kind="download" mediaId={item.id} amountCents={item.price_cents} onDone={onChanged} />
       )}
       <button className="btn btn-sm" onClick={download} disabled={busy}>
         {busy ? <span className="spinner" /> : 'Download'}

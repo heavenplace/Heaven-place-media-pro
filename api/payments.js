@@ -1,6 +1,7 @@
 import Stripe from 'stripe';
 import { q } from './db.js';
 import { logActivity } from './guards.js';
+import { payout as prcpayPayout, prcpayEnabled } from './prcpay.js';
 
 // Card checkout runs through Stripe Checkout: the API creates a hosted session
 // and the browser is sent there. A purchase is fulfilled in two places that
@@ -25,7 +26,7 @@ export const paymentsEnabled = () => Boolean(process.env.STRIPE_SECRET_KEY);
 // wallet, or something else. Each carries `rate_per_usd` — how many units of its currency
 // one US dollar buys — so the $5 / $15 licence converts to an exact amount in that
 // currency. Only that amount covers the licence; less or more does not.
-export const PAYMENT_METHODS = ['bank', 'crypto', 'other'];
+export const PAYMENT_METHODS = ['bank', 'crypto', 'prcpay', 'other'];
 
 const decimalsFor = (method) => (method === 'crypto' ? 6 : 2);
 
@@ -79,7 +80,7 @@ export function safeOrigin(requested) {
   return allowedOrigins()[0] || null;
 }
 
-const fulfilPremium = async (userId, periodEnd) => {
+export const grantPremium = async (userId, periodEnd) => {
   await q("UPDATE users SET tier = 'premium' WHERE id = $1", [userId]);
   const end = periodEnd ?? new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
   const { rows } = await q("SELECT id FROM subscriptions WHERE user_id = $1 AND status = 'active'", [userId]);
@@ -87,7 +88,7 @@ const fulfilPremium = async (userId, periodEnd) => {
   else await q("INSERT INTO subscriptions (user_id, status, current_period_end) VALUES ($1,'active',$2)", [userId, end]);
 };
 
-const fulfilDownload = async (userId, mediaId) => {
+export const grantDownload = async (userId, mediaId) => {
   const { rows } = await q(
     "SELECT id FROM entitlements WHERE user_id = $1 AND kind = 'download' AND media_id = $2",
     [userId, mediaId]
@@ -98,22 +99,60 @@ const fulfilDownload = async (userId, mediaId) => {
 };
 
 // What a listener paid for an item is money the station that published it earned.
-// Keying the row on the checkout session keeps a double fulfilment (confirm +
-// webhook) to a single sale. A membership is platform-wide with no single station
-// behind it, so only item sales reach the ledger.
-const creditEarnings = async (session, userId, mediaId) => {
+// Keying the row on the payment that produced it (Stripe session or PrcPay reference)
+// keeps a double fulfilment (confirm + webhook) to a single sale. A membership is
+// platform-wide with no single station behind it, so only item sales reach the ledger.
+export const creditEarnings = async (userId, mediaId, { sessionId = null, paymentRef = null } = {}) => {
   const { rows } = await q(
     `SELECT m.price_cents, s.id AS station_id, s.owner_id
      FROM media m JOIN stations s ON s.id = m.station_id WHERE m.id = $1`,
     [mediaId]
   );
   const sale = rows[0];
-  if (!sale?.owner_id) return;
-  await q(
-    `INSERT INTO earnings (station_id, owner_id, buyer_id, media_id, kind, amount_cents, stripe_session_id)
-     VALUES ($1,$2,$3,$4,'download',$5,$6) ON CONFLICT (stripe_session_id) DO NOTHING`,
-    [sale.station_id, sale.owner_id, userId, mediaId, sale.price_cents, session.id]
+  if (!sale?.owner_id) return null;
+
+  const earned = await q(
+    `INSERT INTO earnings (station_id, owner_id, buyer_id, media_id, kind, amount_cents, stripe_session_id, payment_ref)
+     VALUES ($1,$2,$3,$4,'download',$5,$6,$7) ON CONFLICT DO NOTHING RETURNING *`,
+    [sale.station_id, sale.owner_id, userId, mediaId, sale.price_cents, sessionId, paymentRef]
   );
+  const earning = earned.rows[0];
+  if (earning) await settleInstantly(earning);
+  return earning ?? null;
+};
+
+// An owner who has set a PrcPay account is paid the moment their item sells — the same
+// "reflected instantly" settlement the listener's own PrcPay payment came from. The
+// transfer is recorded as the payout row, which is also what marks the earning settled.
+// Best-effort on purpose: if PrcPay refuses, the sale stays on the control room's manual
+// ledger instead of being lost.
+const settleInstantly = async (earning) => {
+  if (!prcpayEnabled()) return;
+  const { rows } = await q('SELECT prcpay_account, prcpay_currency FROM payout_accounts WHERE user_id = $1', [
+    earning.owner_id
+  ]);
+  const destination = String(rows[0]?.prcpay_account ?? '').trim();
+  if (!destination) return;
+
+  try {
+    const transfer = await prcpayPayout({
+      cents: earning.amount_cents,
+      currency: rows[0].prcpay_currency || 'USD',
+      account: destination,
+      reference: `sc-earning-${earning.id}`,
+      description: 'StreamCast Pro station earnings'
+    });
+    if (!transfer.settled) return;
+
+    const { rows: paid } = await q(
+      `INSERT INTO payouts (owner_id, amount_cents, note, provider, reference)
+       VALUES ($1,$2,$3,'prcpay',$4) RETURNING id`,
+      [earning.owner_id, earning.amount_cents, `Instant PrcPay transfer to ${destination}`, transfer.id]
+    );
+    await q('UPDATE earnings SET payout_id = $2 WHERE id = $1', [earning.id, paid[0].id]);
+  } catch (error) {
+    console.error('[api] instant PrcPay payout failed for earning', earning.id, error.message);
+  }
 };
 
 // Stripe moved the period end onto the subscription item in newer API
@@ -149,15 +188,15 @@ export async function fulfil(session) {
   }
 
   if (kind === 'premium') {
-    await fulfilPremium(userId, subscriptionPeriodEnd(session.subscription));
+    await grantPremium(userId, subscriptionPeriodEnd(session.subscription));
     await logActivity(userId, 'payment', 'Premium membership paid by card');
     return { kind: 'premium', message: 'Payment received — you are a Premium member.' };
   }
 
   const mediaId = Number(session.metadata.media_id);
   if (!mediaId) return null;
-  await fulfilDownload(userId, mediaId);
-  await creditEarnings(session, userId, mediaId);
+  await grantDownload(userId, mediaId);
+  await creditEarnings(userId, mediaId, { sessionId: session.id });
   const { rows } = await q('SELECT title FROM media WHERE id = $1', [mediaId]);
   await logActivity(userId, 'payment', `Paid for ${rows[0]?.title || 'a download'} by card`);
   return { kind: 'download', message: `Payment received — ${rows[0]?.title || 'your download'} is unlocked.` };
