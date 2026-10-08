@@ -106,6 +106,82 @@ router.get('/media', async (_req, res) => {
   res.json({ media: rows });
 });
 
+// The moderation desk: what creators have published, with the owner behind it. Media is
+// what listeners can actually play — uploads, phone recordings and Relive captures.
+const MODERATION_SELECT = `SELECT m.*, s.name AS station_name, s.kind AS station_kind, s.status AS station_status,
+  u.name AS owner_name, u.email AS owner_email
+  FROM media m JOIN stations s ON s.id = m.station_id LEFT JOIN users u ON u.id = s.owner_id`;
+
+router.get('/moderation', async (req, res) => {
+  const { rows: totals } = await q(
+    `SELECT count(*)::int AS total,
+       count(*) FILTER (WHERE flagged)::int AS flagged,
+       count(*) FILTER (WHERE NOT visible)::int AS hidden
+     FROM media`
+  );
+
+  const where = [];
+  const params = [];
+  if (req.query.status === 'flagged') where.push('m.flagged');
+  if (req.query.status === 'hidden') where.push('NOT m.visible');
+  if (req.query.q) {
+    params.push(`%${req.query.q}%`);
+    where.push(`(m.title ILIKE $${params.length} OR s.name ILIKE $${params.length} OR coalesce(u.name,'') ILIKE $${params.length})`);
+  }
+
+  const { rows } = await q(
+    `${MODERATION_SELECT}
+     ${where.length ? `WHERE ${where.join(' AND ')}` : ''}
+     ORDER BY m.flagged DESC, m.created_at DESC LIMIT 200`,
+    params
+  );
+  res.json({ summary: totals[0], media: rows });
+});
+
+// Flag for review, clear a flag, hide it from listeners, or put it back. A flag is a
+// marker for the control room; only hiding or removing takes the item out of the app.
+const MODERATION_ACTIONS = {
+  flag: {
+    sql: 'UPDATE media SET flagged = true, flag_reason = $2, flagged_at = now(), flagged_by = $3 WHERE id = $1 RETURNING *',
+    log: (item) => `flagged ${item.title}`
+  },
+  unflag: {
+    sql: 'UPDATE media SET flagged = false, flag_reason = null, flagged_at = null, flagged_by = null WHERE id = $1 RETURNING *',
+    log: (item) => `cleared the flag on ${item.title}`
+  },
+  hide: { sql: 'UPDATE media SET visible = false WHERE id = $1 RETURNING *', log: (item) => `hid ${item.title}` },
+  restore: { sql: 'UPDATE media SET visible = true WHERE id = $1 RETURNING *', log: (item) => `restored ${item.title}` }
+};
+
+router.post('/media/:id/moderate', async (req, res) => {
+  const action = String(req.body?.action ?? '');
+  if (!MODERATION_ACTIONS[action]) return res.status(400).json({ error: 'Unknown moderation action' });
+
+  const { rows: found } = await q(
+    'SELECT m.id, m.title, m.station_id, s.name AS station_name FROM media m JOIN stations s ON s.id = m.station_id WHERE m.id = $1',
+    [req.params.id]
+  );
+  if (!found.length) return res.status(404).json({ error: 'That content has already been removed' });
+  const item = found[0];
+
+  const params =
+    action === 'flag' ? [item.id, String(req.body?.reason ?? '').trim() || 'Flagged for review', req.user.id] : [item.id];
+  const { rows } = await q(MODERATION_ACTIONS[action].sql, params);
+  await logActivity(req.user.id, 'moderate', `${req.user.name} ${MODERATION_ACTIONS[action].log(item)} on ${item.station_name}`, item.station_id);
+  res.json({ media: rows[0] });
+});
+
+router.delete('/media/:id', async (req, res) => {
+  const { rows } = await q(
+    'SELECT m.id, m.title, m.station_id, s.name AS station_name FROM media m JOIN stations s ON s.id = m.station_id WHERE m.id = $1',
+    [req.params.id]
+  );
+  if (!rows.length) return res.status(404).json({ error: 'That content has already been removed' });
+  await q('DELETE FROM media WHERE id = $1', [rows[0].id]);
+  await logActivity(req.user.id, 'moderate', `${req.user.name} removed ${rows[0].title} from ${rows[0].station_name}`, rows[0].station_id);
+  res.status(204).end();
+});
+
 router.get('/users', async (_req, res) => {
   const { rows } = await q(
     `SELECT u.id, u.email, u.name, u.role, u.tier, u.created_at,

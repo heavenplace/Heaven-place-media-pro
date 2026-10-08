@@ -43,6 +43,10 @@ CREATE TABLE IF NOT EXISTS media (
   price_cents integer NOT NULL DEFAULT 0,
   downloadable boolean NOT NULL DEFAULT true,
   visible boolean NOT NULL DEFAULT true,
+  flagged boolean NOT NULL DEFAULT false,
+  flag_reason text,
+  flagged_at timestamptz,
+  flagged_by integer REFERENCES users(id) ON DELETE SET NULL,
   duration_seconds integer NOT NULL DEFAULT 0,
   created_by integer REFERENCES users(id) ON DELETE SET NULL,
   created_at timestamptz NOT NULL DEFAULT now()
@@ -138,6 +142,10 @@ ALTER TABLE live_sessions ADD COLUMN IF NOT EXISTS mime text;
 ALTER TABLE live_sessions ADD COLUMN IF NOT EXISTS recording_url text;
 ALTER TABLE live_sessions ADD COLUMN IF NOT EXISTS chunk_count integer NOT NULL DEFAULT 0;
 ALTER TABLE live_sessions ADD COLUMN IF NOT EXISTS last_chunk_at timestamptz;
+ALTER TABLE media ADD COLUMN IF NOT EXISTS flagged boolean NOT NULL DEFAULT false;
+ALTER TABLE media ADD COLUMN IF NOT EXISTS flag_reason text;
+ALTER TABLE media ADD COLUMN IF NOT EXISTS flagged_at timestamptz;
+ALTER TABLE media ADD COLUMN IF NOT EXISTS flagged_by integer REFERENCES users(id) ON DELETE SET NULL;
 ALTER TABLE live_sessions ALTER COLUMN expires_at DROP NOT NULL;
 `;
 

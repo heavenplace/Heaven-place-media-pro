@@ -118,6 +118,7 @@ label { display: block; font-size: 12px; color: var(--muted); margin: 0 0 6px; f
 .badge-ok { color: var(--ok); border-color: rgba(46, 204, 113, 0.4); }
 .badge-warn { color: var(--warn); border-color: rgba(255, 176, 32, 0.4); }
 .badge-accent { color: var(--accent); border-color: var(--accent); background: var(--accent-soft); }
+.badge-danger { color: #ff9db2; border-color: #5b2230; }
 
 /* ---------- station & media cards ---------- */
 .card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; display: flex; flex-direction: column; }

@@ -129,6 +129,20 @@ key — a placeholder only makes the app start, it does not take money.
   BEFORE `express.json()` because the signature check needs the raw body — keep that
   order. The manual request/approval flow is unchanged and is what the Premium page
   falls back to when no Stripe key is set.
+- **Moderation** is the control room's review desk (`web/src/pages/admin/Moderation.jsx`,
+  the Moderation tab). It lists creator-published media — uploads, phone recordings and
+  Relive captures — with the station and the owner behind each item, and offers four
+  actions plus removal:
+  - `GET /api/admin/moderation` (`?status=flagged|hidden`, `?q=` over title, station and
+    owner) returns `summary` counters and the items, flagged first.
+  - `POST /api/admin/media/:id/moderate` with `{ action: 'flag' | 'unflag' | 'hide' |
+    'restore', reason }`. A **flag** only marks the item for the control room
+    (`media.flagged`, `flag_reason`, `flagged_at`, `flagged_by`); **hide** sets the
+    existing `media.visible = false`, which is what takes it out of the listener app, and
+    **restore** puts it back. Every action is written to the activity feed as `moderate`.
+  - `DELETE /api/admin/media/:id` removes the item for good, with a confirmation in the UI.
+  - Only admins: `/api/admin/*` is behind `router.use(auth({ admin: true }))`, and the
+    studio never shows these controls.
 - **Active listeners** is a 5-minute rolling count of `listen` activity rows;
   per-station stream time sums the live-session windows.
 - `SEED_DEMO=1` seeds demo stations with public sample media URLs, so the preview
