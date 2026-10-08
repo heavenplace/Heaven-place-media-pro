@@ -1,8 +1,34 @@
 package pro.streamcast.core
 
 import org.json.JSONObject
+import java.time.Instant
+import java.time.OffsetDateTime
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
 
 /** The API rows the two apps read, parsed once so screens stay short. */
+
+/**
+ * A nullable text column. The API sends a real JSON null for "no value", and Android's
+ * `optString` turns that into the four-letter string "null" — which is why every optional
+ * column goes through here instead.
+ */
+private fun JSONObject.text(key: String): String? =
+    if (isNull(key)) null else optString(key).takeIf { it.isNotBlank() }
+
+private fun instantOf(value: String?): Instant? = value?.let { text ->
+    runCatching { Instant.parse(text) }
+        .recoverCatching { OffsetDateTime.parse(text).toInstant() }
+        .getOrNull()
+}
+
+/** A timestamp in the listener's own time zone, e.g. "14:30". */
+fun clockLabel(value: String?): String? = instantOf(value)
+    ?.let { DateTimeFormatter.ofPattern("HH:mm").withZone(ZoneId.systemDefault()).format(it) }
+
+/** A timestamp in the listener's own time zone, e.g. "08 Oct 14:30". */
+fun stampLabel(value: String?): String? = instantOf(value)
+    ?.let { DateTimeFormatter.ofPattern("dd MMM HH:mm").withZone(ZoneId.systemDefault()).format(it) }
 
 data class Station(
     val id: Int,
@@ -62,9 +88,26 @@ data class LiveSession(
     val recordingUrl: String?,
     val mediaUrl: String?,
     val mediaType: String?,
-    val permanent: Boolean
+    val permanent: Boolean,
+    val startedAt: String?,
+    val expiresAt: String?,
+    val mime: String?
 ) {
     val video: Boolean get() = (mediaType ?: kind) == "video"
+
+    /** Still running: 24/7 has no end time, anything else ends when its window runs out. */
+    val onAir: Boolean
+        get() = status == "live" && (expiresAt == null || instantOf(expiresAt)?.isAfter(Instant.now()) == true)
+
+    /** The line the web cards show under a live title. */
+    val airLabel: String
+        get() = when {
+            permanent || expiresAt == null -> "on air 24/7"
+            else -> clockLabel(expiresAt)?.let { "until $it" } ?: "on air"
+        }
+
+    /** A phone broadcast carries the mime of what was recorded; a window does not. */
+    val isPhoneBroadcast: Boolean get() = mime != null
 
     /** A window over a published item plays that item; a phone broadcast plays the file. */
     fun toPlayable(): Playable? {
@@ -136,11 +179,11 @@ fun stationOf(row: JSONObject) = Station(
     id = row.optInt("id"),
     name = row.optString("name"),
     kind = row.optString("kind", "radio"),
-    description = row.optString("description"),
-    artwork = row.optString("artwork_url").takeIf { it.isNotBlank() },
+    description = row.text("description") ?: "",
+    artwork = row.text("artwork_url"),
     status = row.optString("status", "pending"),
     verified = row.optBoolean("verified"),
-    owner = row.optString("owner_name").takeIf { it.isNotBlank() },
+    owner = row.text("owner_name"),
     mediaCount = row.optInt("media_count"),
     live = row.optBoolean("is_live")
 )
@@ -149,7 +192,7 @@ fun mediaOf(row: JSONObject) = MediaItem(
     id = row.optInt("id"),
     stationId = row.optInt("station_id"),
     title = row.optString("title"),
-    description = row.optString("description"),
+    description = row.text("description") ?: "",
     type = row.optString("type", "audio"),
     url = row.optString("url"),
     source = row.optString("source", "upload"),
@@ -158,30 +201,33 @@ fun mediaOf(row: JSONObject) = MediaItem(
     durationSeconds = row.optInt("duration_seconds"),
     visible = row.optBoolean("visible", true),
     flagged = row.optBoolean("flagged"),
-    stationName = row.optString("station_name").takeIf { it.isNotBlank() },
-    artwork = row.optString("station_artwork").takeIf { it.isNotBlank() }
+    stationName = row.text("station_name"),
+    artwork = row.text("station_artwork")
 )
 
 fun liveOf(row: JSONObject) = LiveSession(
     id = row.optInt("id"),
     stationId = row.optInt("station_id"),
     stationName = row.optString("station_name"),
-    stationArtwork = row.optString("station_artwork").takeIf { it.isNotBlank() },
+    stationArtwork = row.text("station_artwork"),
     title = row.optString("title"),
     kind = row.optString("kind", "audio"),
     status = row.optString("status", "live"),
-    recordingUrl = row.optString("recording_url").takeIf { it.isNotBlank() },
-    mediaUrl = row.optString("media_url").takeIf { it.isNotBlank() },
-    mediaType = row.optString("media_type").takeIf { it.isNotBlank() },
-    permanent = row.optBoolean("permanent")
+    recordingUrl = row.text("recording_url"),
+    mediaUrl = row.text("media_url"),
+    mediaType = row.text("media_type"),
+    permanent = row.optBoolean("permanent"),
+    startedAt = row.text("started_at"),
+    expiresAt = row.text("expires_at"),
+    mime = row.text("mime")
 )
 
 fun podcastOf(row: JSONObject) = Podcast(
     id = row.optInt("id"),
     title = row.optString("title"),
-    description = row.optString("description"),
-    artwork = row.optString("artwork_url").takeIf { it.isNotBlank() },
-    owner = row.optString("owner_name").takeIf { it.isNotBlank() },
+    description = row.text("description") ?: "",
+    artwork = row.text("artwork_url"),
+    owner = row.text("owner_name"),
     episodeCount = row.optInt("episode_count")
 )
 
@@ -189,7 +235,7 @@ fun episodeOf(row: JSONObject) = Episode(
     id = row.optInt("id"),
     podcastId = row.optInt("podcast_id"),
     title = row.optString("title"),
-    description = row.optString("description"),
+    description = row.text("description") ?: "",
     url = row.optString("url"),
     durationSeconds = row.optInt("duration_seconds")
 )

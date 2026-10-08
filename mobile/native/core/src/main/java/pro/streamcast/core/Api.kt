@@ -1,11 +1,20 @@
 package pro.streamcast.core
 
+import android.content.ContentResolver
+import android.net.Uri
+import android.provider.OpenableColumns
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import okhttp3.MediaType
 import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.MediaType.Companion.toMediaTypeOrNull
+import okhttp3.MultipartBody
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import okhttp3.RequestBody
 import okhttp3.RequestBody.Companion.toRequestBody
+import okio.BufferedSink
+import okio.source
 import org.json.JSONArray
 import org.json.JSONObject
 import java.util.concurrent.TimeUnit
@@ -42,6 +51,49 @@ object Api {
 
     suspend fun delete(path: String) {
         call("DELETE", path, null)
+    }
+
+    /**
+     * Posts a file the phone picked to `/api/uploads` — the same endpoint the web studio
+     * uses. The bytes stream straight from the content uri, so a long recording never has
+     * to fit in memory. Returns `{ url, mime, size, name }`.
+     */
+    suspend fun upload(fileName: String, mime: String, resolver: ContentResolver, uri: Uri): JSONObject =
+        withContext(Dispatchers.IO) {
+            val part = MultipartBody.Builder().setType(MultipartBody.FORM)
+                .addFormDataPart("file", fileName, StreamBody(resolver, uri, mime.toMediaTypeOrNull()))
+                .build()
+            val builder = Request.Builder().url(baseUrl.trimEnd('/') + "/api/uploads").post(part)
+            token?.let { builder.header("Authorization", "Bearer $it") }
+            uploads.newCall(builder.build()).execute().use { response ->
+                val text = response.body?.string().orEmpty()
+                if (!response.isSuccessful) throw ApiException(errorMessage(text, response.code), response.code)
+                if (text.isBlank()) JSONObject() else JSONObject(text)
+            }
+        }
+
+    private val uploads: OkHttpClient = client.newBuilder()
+        .writeTimeout(10, TimeUnit.MINUTES)
+        .readTimeout(5, TimeUnit.MINUTES)
+        .build()
+
+    /** A picked file, read from the content resolver when OkHttp asks for it. */
+    private class StreamBody(
+        private val resolver: ContentResolver,
+        private val uri: Uri,
+        private val type: MediaType?
+    ) : RequestBody() {
+        override fun contentType(): MediaType? = type
+
+        override fun contentLength(): Long =
+            resolver.query(uri, arrayOf(OpenableColumns.SIZE), null, null, null)?.use { cursor ->
+                if (cursor.moveToFirst()) cursor.getLong(0).takeIf { it > 0 } ?: -1L else -1L
+            } ?: -1L
+
+        override fun writeTo(sink: BufferedSink) {
+            val input = resolver.openInputStream(uri) ?: throw ApiException("That file could not be opened")
+            input.use { sink.writeAll(it.source()) }
+        }
     }
 
     /** The app boots against the API origin, so sign-in and browse work without the site. */

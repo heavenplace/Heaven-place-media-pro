@@ -217,12 +217,37 @@ docker compose -f docker-compose.mobile.yml run --rm android
   TV, Podcasts), station pages and one persistent ExoPlayer that keeps audio running
   behind a bar with artwork/title/live badge, plus mute/fullscreen for video; the control
   room has Dashboard, Stations (approve/suspend/delete), Moderation (flag/hide/restore/
-  delete), Live (take off air) and Users (role/tier). **Still web-only**: the creator
-  studio (uploading, live windows, phone broadcasting), premium checkout/downloads,
-  podcast authoring, access-request approvals and the APK download page.
+  delete), Live (take off air) and Users (role/tier).
+- **The listener home mirrors the web home page** (`HomeScreen` in `Screens.kt`): hero
+  (badge, strapline, blurb, "Browse radio"/"Browse TV"), On air now with the same card
+  copy ("until HH:mm" / "on air 24/7", "Tune in"/"Station", or "Watch live" for a phone
+  broadcast), Radio stations, TV stations and Latest uploads, each capped at 4 or 6 items
+  with a "See all" chip. Keep the two in step when the web home changes — the native
+  cards take their wording from `LiveSession.airLabel`/`isPhoneBroadcast` (`Models.kt`).
+- **The creator studio is in the listener app**, its own tab behind the header's "Studio"
+  chip (`StudioScreen.kt`) — the web dashboard's five tabs against the same owner-scoped
+  API (`/stations/mine`, `/media/mine`, `/live/mine`, `/podcasts/mine`): Overview,
+  Media, Live windows, Podcasts and Station settings. It signs in as the same account and
+  shows only that account's stations, exactly like the web studio.
+  - Media publishes a file the phone picked (a `GetContent` picker streamed to
+    `POST /api/uploads`, see `Api.upload` in `core/Api.kt`) or a pasted link, then
+    `POST /api/media`; each item can be hidden or deleted.
+  - Live windows reuse `POST /api/live` with `hours` or `permanent`, plus
+    `/:id/extend` and `/:id/end`.
+  - Podcasts create shows, publish episodes (upload or link) and delete episodes.
+  - Settings renames the station, edits its description and uploads artwork
+    (`PATCH /api/stations/:id`).
+  - **Still web-only**: broadcasting from the phone's own camera/mic (`LiveBroadcaster.jsx`
+    records canvas slices into `POST /api/live/:id/chunk` — Android's `MediaRecorder` has
+    no incremental webm output, so the native studio does not offer it), premium
+    checkout/downloads, access-request approvals and the APK download page.
+- **`JSONObject.optString` turns a JSON null into the string `"null"`** on Android, which
+  once made a live window look like a phone broadcast and pointed the player at
+  `/null`. Every optional column goes through the private `JSONObject.text()` helper in
+  `core/Models.kt` instead — use it for new nullable fields.
 - The old Capacitor shells (`mobile/listener`, `mobile/admin`) are gone. If an installed
   app still shows the web page, it is an older APK — the native build ships as
-  versionCode 3 under the same package names and the same signing key, so it updates in
+  versionCode 4 under the same package names and the same signing key, so it updates in
   place.
 
 ## Environment and sandbox notes

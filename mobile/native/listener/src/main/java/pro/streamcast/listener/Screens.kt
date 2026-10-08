@@ -25,13 +25,16 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import pro.streamcast.core.AccentBadge
 import pro.streamcast.core.Account
 import pro.streamcast.core.Api
 import pro.streamcast.core.Artwork
 import pro.streamcast.core.Brand
+import pro.streamcast.core.Chip
 import pro.streamcast.core.LiveBadge
 import pro.streamcast.core.LiveSession
 import pro.streamcast.core.MediaItem
@@ -46,54 +49,172 @@ import pro.streamcast.core.Station
 import pro.streamcast.core.clock
 import pro.streamcast.core.episodeOf
 import pro.streamcast.core.liveOf
+import pro.streamcast.core.mediaOf
 import pro.streamcast.core.objects
 import pro.streamcast.core.podcastOf
 import pro.streamcast.core.remote
 import pro.streamcast.core.stationOf
 import pro.streamcast.core.toPlayable
 
+/** The listener home: the same sections, in the same order, as the web home page. */
 @Composable
 fun HomeScreen(go: (Screen) -> Unit, context: Context) {
     val live = remote("home-live") { Api.get("/live").objects("live").map { liveOf(it) } }
     val stations = remote("home-stations") { Api.get("/stations").objects("stations").map { stationOf(it) } }
+    val media = remote("home-media") { Api.get("/media").objects("media").map { mediaOf(it) } }
+
+    val onAir = live.data.orEmpty()
+    val listed = stations.data.orEmpty()
+    val radio = listed.filter { !it.isTv }.take(4)
+    val tv = listed.filter { it.isTv }.take(4)
+    val latest = media.data.orEmpty()
 
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(14.dp)) {
-        item {
-            Column(Modifier.padding(bottom = 2.dp)) {
-                Text(
-                    "Radio, TV and podcasts — live and on demand.",
-                    color = Brand.text,
-                    fontSize = 18.sp,
-                    fontWeight = FontWeight.Bold
-                )
-                Text(
-                    "Everything the control room publishes appears here.",
-                    color = Brand.muted,
-                    fontSize = 12.5.sp,
-                    modifier = Modifier.padding(top = 4.dp)
+        item { Hero(go) }
+
+        item { SectionHeader("On air now") }
+        if (onAir.isEmpty()) {
+            item {
+                Message(
+                    if (live.loading) "Checking what is on air…"
+                    else "Nothing is on air right now — check a station for its on-demand shows."
                 )
             }
-        }
-
-        item { SectionTitle("On air now") }
-        val onAir = live.data.orEmpty()
-        if (onAir.isEmpty()) {
-            item { Message(if (live.loading) "Checking what is on air…" else "Nothing is on air right now.") }
         } else {
             items(onAir, key = { "live-${it.id}" }) { session ->
-                LiveRow(session, context)
+                LiveCard(session, context, go)
                 Spacer(Modifier.height(8.dp))
             }
         }
 
-        item { SectionTitle("Stations") }
-        val list = stations.data.orEmpty()
-        if (list.isEmpty()) {
-            item { Message(if (stations.loading) "Loading stations…" else stations.error ?: "No stations yet.") }
+        item { SectionHeader("Radio stations", "See all") { go(Screen.Browse("radio")) } }
+        if (radio.isEmpty()) {
+            item {
+                val problem = stations.error
+                Message(if (stations.loading) "Loading stations…" else problem ?: "No radio stations yet.")
+            }
         } else {
-            items(list, key = { "station-${it.id}" }) { station ->
+            items(radio, key = { "radio-${it.id}" }) { station ->
                 StationRow(station) { go(Screen.Station(station.id)) }
                 Spacer(Modifier.height(8.dp))
+            }
+        }
+
+        item { SectionHeader("TV stations", "See all") { go(Screen.Browse("tv")) } }
+        if (tv.isEmpty()) {
+            item { Message(if (stations.loading) "Loading stations…" else "No TV stations yet.") }
+        } else {
+            items(tv, key = { "tv-${it.id}" }) { station ->
+                StationRow(station) { go(Screen.Station(station.id)) }
+                Spacer(Modifier.height(8.dp))
+            }
+        }
+
+        item { SectionHeader("Latest uploads") }
+        if (latest.isEmpty()) {
+            item { Message(if (media.loading) "Loading uploads…" else "Nothing has been published yet.") }
+        } else {
+            items(latest.take(6), key = { "media-${it.id}" }) { item ->
+                RowCard(onClick = { PlayerController.play(context, item.toPlayable()) }) {
+                    Artwork(item.artwork, if (item.isVideo) "🎬" else "♪")
+                    RowText(item.title, item.stationName ?: MediaRowText(item))
+                    Spacer(Modifier.weight(1f))
+                    Text("▶", color = Brand.accent, fontSize = 15.sp)
+                }
+                Spacer(Modifier.height(8.dp))
+            }
+            item {
+                Text(
+                    "Streaming is free — downloads unlock by tier.",
+                    color = Brand.muted,
+                    fontSize = 11.sp,
+                    modifier = Modifier.padding(top = 10.dp)
+                )
+            }
+        }
+    }
+}
+
+/** The web hero: the strapline, the promise and the two ways in. */
+@Composable
+private fun Hero(go: (Screen) -> Unit) {
+    Column(
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(Brand.panel).padding(16.dp)
+    ) {
+        AccentBadge("Streaming free for everyone")
+        Text(
+            "Radio, TV and podcasts — live and on demand.",
+            color = Brand.text,
+            fontSize = 19.sp,
+            fontWeight = FontWeight.Bold,
+            modifier = Modifier.padding(top = 12.dp)
+        )
+        Text(
+            "Listen or watch from any device, download what your tier allows, and go live from your own phone. " +
+                "Everything published in the control room appears here instantly.",
+            color = Brand.muted,
+            fontSize = 12.5.sp,
+            modifier = Modifier.padding(top = 8.dp)
+        )
+        Row(Modifier.padding(top = 14.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            HeroButton("Browse radio", true) { go(Screen.Browse("radio")) }
+            HeroButton("Browse TV", false) { go(Screen.Browse("tv")) }
+        }
+    }
+}
+
+@Composable
+private fun HeroButton(text: String, primary: Boolean, onClick: () -> Unit) {
+    Text(
+        text,
+        color = if (primary) Color.White else Brand.text,
+        fontSize = 13.sp,
+        fontWeight = FontWeight.SemiBold,
+        modifier = Modifier.clip(RoundedCornerShape(50))
+            .background(if (primary) Brand.accent else Brand.panel2)
+            .clickable { onClick() }
+            .padding(horizontal = 16.dp, vertical = 9.dp)
+    )
+}
+
+/** A section heading, with the "See all" chip the web page puts beside it. */
+@Composable
+private fun SectionHeader(title: String, link: String? = null, onClick: () -> Unit = {}) {
+    Row(
+        Modifier.fillMaxWidth().padding(top = 18.dp, bottom = 8.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(title, color = Brand.text, fontSize = 15.5.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+        if (link != null) Chip(link, onClick = onClick)
+    }
+}
+
+/** One on-air card: the station, the title, how long it runs, and how to watch or listen. */
+@Composable
+private fun LiveCard(session: LiveSession, context: Context, go: (Screen) -> Unit) {
+    Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(Brand.panel).padding(12.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                session.stationName,
+                color = Brand.text,
+                fontSize = 14.sp,
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier.weight(1f)
+            )
+            LiveBadge()
+        }
+        Text(session.title, color = Brand.muted, fontSize = 12.5.sp, modifier = Modifier.padding(top = 6.dp))
+        Row(Modifier.padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+            Pill(if (session.video) "Video" else "Audio")
+            Spacer(Modifier.width(6.dp))
+            Text(session.airLabel, color = Brand.muted, fontSize = 11.sp)
+        }
+        Row(Modifier.padding(top = 10.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            if (session.isPhoneBroadcast) {
+                HeroButton("Watch live", true) { go(Screen.Station(session.stationId)) }
+            } else {
+                HeroButton("Tune in", true) { session.toPlayable()?.let { PlayerController.play(context, it) } }
+                HeroButton("Station", false) { go(Screen.Station(session.stationId)) }
             }
         }
     }

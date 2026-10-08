@@ -18,7 +18,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -41,6 +40,7 @@ import kotlinx.coroutines.delay
 import pro.streamcast.core.Account
 import pro.streamcast.core.Artwork
 import pro.streamcast.core.Brand
+import pro.streamcast.core.Chip
 import pro.streamcast.core.Line
 import pro.streamcast.core.LiveBadge
 import pro.streamcast.core.Session
@@ -53,6 +53,7 @@ sealed interface Screen {
     data class Station(val id: Int) : Screen
     data object NowPlaying : Screen
     data object Account : Screen
+    data object Studio : Screen
 }
 
 /** The listener app: sign in once, then browse and play behind one persistent player. */
@@ -101,6 +102,7 @@ fun ListenerApp(session: Session) {
                 is Screen.Podcasts -> PodcastsScreen(context)
                 is Screen.Station -> StationScreen(current.id, signedIn, go, context)
                 is Screen.NowPlaying -> NowPlayingScreen(context)
+                is Screen.Studio -> StudioScreen()
                 is Screen.Account -> AccountScreen(signedIn) {
                     PlayerController.stop()
                     session.clear()
@@ -139,6 +141,7 @@ private fun TopBar(screen: Screen, account: Account, go: (Screen) -> Unit) {
             NavChip("Radio", screen is Screen.Browse && screen.kind == "radio") { go(Screen.Browse("radio")) }
             NavChip("TV", screen is Screen.Browse && screen.kind == "tv") { go(Screen.Browse("tv")) }
             NavChip("Podcasts", screen is Screen.Podcasts) { go(Screen.Podcasts) }
+            NavChip("Studio", screen is Screen.Studio) { go(Screen.Studio) }
             NavChip("Account", screen is Screen.Account) { go(Screen.Account) }
         }
         Spacer(Modifier.height(8.dp))
@@ -147,18 +150,8 @@ private fun TopBar(screen: Screen, account: Account, go: (Screen) -> Unit) {
 }
 
 @Composable
-private fun NavChip(text: String, active: Boolean, onClick: () -> Unit) {
-    Text(
-        text,
-        color = if (active) Color.White else Brand.muted,
-        fontSize = 12.5.sp,
-        fontWeight = FontWeight.Medium,
-        modifier = Modifier.padding(end = 6.dp).clip(RoundedCornerShape(50))
-            .background(if (active) Brand.accent else Brand.panel2)
-            .clickable { onClick() }
-            .padding(horizontal = 12.dp, vertical = 7.dp)
-    )
-}
+private fun NavChip(text: String, active: Boolean, onClick: () -> Unit) =
+    Chip(text, active, Modifier.padding(end = 6.dp), onClick)
 
 @Composable
 fun CircleButton(glyph: String, filled: Boolean, size: Dp = 42.dp, onClick: () -> Unit) {

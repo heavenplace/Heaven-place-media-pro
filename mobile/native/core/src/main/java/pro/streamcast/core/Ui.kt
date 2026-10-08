@@ -25,6 +25,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -95,6 +96,36 @@ fun Pill(text: String, color: Color = Brand.muted) {
         fontWeight = FontWeight.Medium,
         modifier = Modifier.clip(RoundedCornerShape(50)).background(Brand.panel2)
             .padding(horizontal = 7.dp, vertical = 2.dp)
+    )
+}
+
+/** A tappable pill: nav links, tab bars and pickers all use the same shape. */
+@Composable
+fun Chip(text: String, active: Boolean = false, modifier: Modifier = Modifier, onClick: () -> Unit) {
+    Text(
+        text,
+        color = if (active) Color.White else Brand.muted,
+        fontSize = 12.5.sp,
+        fontWeight = FontWeight.Medium,
+        maxLines = 1,
+        modifier = modifier.clip(RoundedCornerShape(50))
+            .background(if (active) Brand.accent else Brand.panel2)
+            .clickable { onClick() }
+            .padding(horizontal = 12.dp, vertical = 7.dp)
+    )
+}
+
+/** The accent label the web hero and cards use, e.g. "Streaming free for everyone". */
+@Composable
+fun AccentBadge(text: String) {
+    Text(
+        text,
+        color = Brand.accent,
+        fontSize = 10.5.sp,
+        fontWeight = FontWeight.SemiBold,
+        modifier = Modifier.clip(RoundedCornerShape(50))
+            .background(Brand.accent.copy(alpha = 0.14f))
+            .padding(horizontal = 10.dp, vertical = 4.dp)
     )
 }
 
@@ -193,9 +224,29 @@ fun Field(
         onValueChange = onValueChange,
         label = { Text(label, fontSize = 13.sp) },
         singleLine = true,
-        textStyle = androidx.compose.ui.text.TextStyle(fontSize = 14.sp, color = Brand.text),
+        textStyle = TextStyle(fontSize = 14.sp, color = Brand.text),
         keyboardOptions = KeyboardOptions(keyboardType = if (password) KeyboardType.Password else KeyboardType.Email),
         visualTransformation = if (password) PasswordVisualTransformation() else VisualTransformation.None,
+        modifier = Modifier.fillMaxWidth().padding(vertical = 5.dp)
+    )
+}
+
+/** A free-text field — the studio's titles, descriptions and prices. */
+@Composable
+fun TextInput(
+    value: String,
+    onValueChange: (String) -> Unit,
+    label: String,
+    keyboard: KeyboardType = KeyboardType.Text,
+    singleLine: Boolean = true
+) {
+    OutlinedTextField(
+        value = value,
+        onValueChange = onValueChange,
+        label = { Text(label, fontSize = 13.sp) },
+        singleLine = singleLine,
+        textStyle = TextStyle(fontSize = 14.sp, color = Brand.text),
+        keyboardOptions = KeyboardOptions(keyboardType = keyboard),
         modifier = Modifier.fillMaxWidth().padding(vertical = 5.dp)
     )
 }
