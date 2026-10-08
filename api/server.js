@@ -2,7 +2,7 @@ import express from 'express';
 import cors from 'cors';
 import path from 'node:path';
 import { ensureAdmin, ensureSchema, ensureSeed } from './db.js';
-import uploadRoutes, { UPLOAD_DIR } from './uploads.js';
+import uploadRoutes, { MEDIA_TYPES, UPLOAD_DIR } from './uploads.js';
 import authRoutes from './routes/auth.js';
 import stationRoutes from './routes/stations.js';
 import mediaRoutes from './routes/media.js';
@@ -56,7 +56,20 @@ app.get('/api/config', (_req, res) =>
   })
 );
 
-app.use('/uploads', express.static(UPLOAD_DIR, { maxAge: '1h' }));
+// A browser needs the true media type before it will decode a file, and the mime table
+// built into the static handler does not know every format a station publishes (a .opus
+// went out as application/octet-stream, which some players refuse). Extensions we accept
+// are served with the type registered for them; anything else is left to the handler.
+app.use(
+  '/uploads',
+  express.static(UPLOAD_DIR, {
+    maxAge: '1h',
+    setHeaders: (res, filePath) => {
+      const type = MEDIA_TYPES[path.extname(filePath).toLowerCase()];
+      if (type) res.setHeader('Content-Type', type);
+    }
+  })
+);
 app.use('/api/uploads', uploadRoutes);
 app.use('/api/auth', authRoutes);
 app.use('/api/stations', stationRoutes);

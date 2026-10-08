@@ -16,7 +16,15 @@ export default function FileDrop({ accept = 'audio', label = 'Choose a file', re
   const [error, setError] = useState('');
   const [done, setDone] = useState('');
 
-  const acceptAttr = accept === 'video' ? 'video/*' : accept === 'image' ? 'image/*' : 'audio/*';
+  // The picker has to offer every format a station may publish: a bare `audio/*` hides the
+  // files whose type the device does not recognise (an .opus or .flac on Windows), so the
+  // extensions are named beside the wildcard.
+  const acceptAttr =
+    accept === 'video'
+      ? 'video/*,.mp4,.m4v,.mov,.webm,.mkv,.ogv,.avi,.3gp,.ts,.mpg,.mpeg,.wmv'
+      : accept === 'image'
+        ? 'image/*'
+        : 'audio/*,.mp3,.m4a,.m4b,.aac,.ogg,.oga,.opus,.flac,.wav,.aif,.aiff,.wma,.weba,.mka';
 
   async function handleFile(file) {
     if (!file) return;
@@ -25,7 +33,17 @@ export default function FileDrop({ accept = 'audio', label = 'Choose a file', re
     setDone('');
     try {
       const uploaded = await uploadFile(file);
-      const duration_seconds = await readDuration(uploaded.url, accept === 'video' ? 'video' : 'audio');
+      // Read the length with the element that matches the file itself, so a video dropped
+      // on an audio form still reports its own duration.
+      const declared = file.type || uploaded.mime || '';
+      const kind = declared.startsWith('video/')
+        ? 'video'
+        : declared.startsWith('audio/')
+          ? 'audio'
+          : accept === 'video'
+            ? 'video'
+            : 'audio';
+      const duration_seconds = await readDuration(uploaded.url, kind);
       setDone(uploaded.name);
       onUploaded?.({ ...uploaded, duration_seconds, source: 'upload' });
     } catch (err) {

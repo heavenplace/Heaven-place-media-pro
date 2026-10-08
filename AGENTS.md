@@ -84,6 +84,24 @@ key — a placeholder only makes the app start, it does not take money.
 - **Uploads** go to the `uploads` volume and are served from `/uploads/...`.
   Audio/video/image only, 500 MB per file. Phone recordings are captured with
   `MediaRecorder` in the browser and uploaded the same way (`FileDrop.jsx`).
+  - **Every audio and video format a station publishes plays, whatever the machine that
+    picked it knows.** A browser or a phone only names the file types it happens to know,
+    so the same `.opus` or `.flac` arrives as `audio/ogg` on one machine and
+    `application/octet-stream` (or with no type at all) on the next. `MEDIA_TYPES` in
+    `api/uploads.js` is the single list: it decides what `POST /api/uploads` accepts (the
+    mimetype family, else the extension — documents and archives are still refused, now
+    with a 400 instead of a 500), the `mime` it reports back, and the `Content-Type`
+    `express.static` serves the file with. The static handler's built-in mime table knows
+    less — it served a `.opus` as `application/octet-stream`, which some players refuse —
+    so there the extension is authoritative. A new format is one line in that map.
+  - The studio's picker names the extensions beside `audio/*` / `video/*` (a bare wildcard
+    hides files the device does not recognise), and the file itself decides the media type:
+    an MP4 dropped on an audio form publishes as video rather than playing sound only
+    (`PublishForm.jsx`). Playback stays the browser's own decoder — nothing is transcoded.
+  - What actually decodes is the client's business, not the API's: Chrome/Firefox/Edge play
+    Opus, Ogg, FLAC, WAV, MP3, AAC/M4A and MP4; Safari plays no Ogg/Opus and no Matroska,
+    and raw `.aac` (ADTS) plays nowhere. The player therefore says "This browser cannot play
+    this file type." instead of leaving a bar that looks stuck (`Player.jsx`).
 - **The listener player** (`web/src/components/Player.jsx`) is the app's one persistent player:
   audio and video keep running as the listener moves between pages, and both play behind the same
   bar — artwork (or the video's own picture), title and station, a scrubber with elapsed/total time,

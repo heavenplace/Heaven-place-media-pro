@@ -61,6 +61,7 @@ export function PlayerProvider({ children }) {
   const [duration, setDuration] = useState(0);
   const [muted, setMuted] = useState(false);
   const [fullscreen, setFullscreen] = useState(false);
+  const [error, setError] = useState('');
   const mediaRef = useRef(null);
 
   const play = useCallback(async (item) => {
@@ -69,6 +70,7 @@ export function PlayerProvider({ children }) {
     setTime(0);
     setDuration(0);
     setMuted(false);
+    setError('');
     if (item?.id) {
       try {
         await api(`/media/${item.id}/listen`, { method: 'POST' });
@@ -101,8 +103,11 @@ export function PlayerProvider({ children }) {
     onPause: () => setPlaying(false),
     onEnded: () => { setPlaying(false); setTime(0); },
     onTimeUpdate: (event) => setTime(event.currentTarget.currentTime),
-    onLoadedMetadata: (event) => setDuration(event.currentTarget.duration),
-    onDurationChange: (event) => setDuration(event.currentTarget.duration)
+    onLoadedMetadata: (event) => { setError(''); setDuration(event.currentTarget.duration); },
+    onDurationChange: (event) => setDuration(event.currentTarget.duration),
+    // A browser that cannot decode the format (Opus or Ogg in Safari, Matroska anywhere)
+    // says so instead of leaving a bar that looks stuck.
+    onError: () => { setPlaying(false); setError('This browser cannot play this file type.'); }
   };
 
   const toggle = () => {
@@ -181,17 +186,23 @@ export function PlayerProvider({ children }) {
               </div>
               {current.subtitle && <span className="player-sub tiny muted">{current.subtitle}</span>}
               <div className="player-track">
-                <span className="player-time">{current.live ? 'On air' : clock(time)}</span>
-                <button
-                  type="button"
-                  className={`player-bar${seekable ? ' seekable' : ''}`}
-                  onClick={seek}
-                  disabled={!seekable}
-                  aria-label="Seek"
-                >
-                  <span className="player-bar-fill" style={{ width: `${progress}%` }} />
-                </button>
-                <span className="player-time">{seekable ? clock(duration) : 'Live'}</span>
+                {error ? (
+                  <span className="player-time" style={{ flex: 1 }}>{error}</span>
+                ) : (
+                  <>
+                    <span className="player-time">{current.live ? 'On air' : clock(time)}</span>
+                    <button
+                      type="button"
+                      className={`player-bar${seekable ? ' seekable' : ''}`}
+                      onClick={seek}
+                      disabled={!seekable}
+                      aria-label="Seek"
+                    >
+                      <span className="player-bar-fill" style={{ width: `${progress}%` }} />
+                    </button>
+                    <span className="player-time">{seekable ? clock(duration) : 'Live'}</span>
+                  </>
+                )}
               </div>
             </div>
 

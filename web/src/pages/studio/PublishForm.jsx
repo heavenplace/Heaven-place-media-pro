@@ -13,6 +13,10 @@ const empty = {
   price_cents: 0
 };
 
+// Audio or video, taken from the type the file itself carries — the API answers with the
+// type the extension gives when the machine that picked the file did not know the format.
+const familyOf = (mime) => (mime?.startsWith('video/') ? 'video' : mime?.startsWith('audio/') ? 'audio' : null);
+
 export default function PublishForm({ station, reload, notify, fail }) {
   const [draft, setDraft] = useState({ ...empty, type: station.kind === 'tv' ? 'video' : 'audio' });
   const [busy, setBusy] = useState(false);
@@ -66,7 +70,15 @@ export default function PublishForm({ station, reload, notify, fail }) {
           accept={draft.type}
           label={`Upload ${draft.type}`}
           onUploaded={(file) =>
-            setDraft((value) => ({ ...value, url: file.url, duration_seconds: file.duration_seconds, source: 'upload' }))
+            setDraft((value) => ({
+              ...value,
+              url: file.url,
+              duration_seconds: file.duration_seconds,
+              source: 'upload',
+              // The file decides: an MP4 dropped on an audio form publishes as video,
+              // otherwise it would play sound only.
+              type: familyOf(file.mime) || value.type
+            }))
           }
         />
         {draft.url && <div className="tiny muted" style={{ marginTop: 6 }}>Ready · {formatDuration(draft.duration_seconds)}</div>}
