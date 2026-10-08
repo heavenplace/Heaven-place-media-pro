@@ -101,9 +101,19 @@ key — a placeholder only makes the app start, it does not take money.
     `/uploads/live/...`, which express.static serves) to a `MediaSource` buffer, staying a
     couple of seconds behind the live edge. A browser without MediaSource falls back to
     playing the file.
-  - `POST /api/live/:id/end` archives what was recorded as a **Relive** item: a normal
-    `media` row with `source = 'live'`, shown in the station page's Relive section and
-    playable on demand.
+  - **Every broadcast ends up on the station's Relive page**, whatever stops it. Ending it
+    by hand (`POST /api/live/:id/end`) archives what was recorded as a **Relive** item: a
+    normal `media` row with `source = 'live'`, shown in the station page's Relive section
+    and playable on demand. Two paths make sure nothing is missed:
+    - `LiveBroadcaster.jsx` ends its session from the way out — a `pagehide` listener and
+      the unmount cleanup send `POST /api/live/:id/end` with `keepalive`, so closing the
+      tab, reloading or leaving the page still archives the broadcast.
+    - `sweepLiveRecordings()` (`api/routes/live.js`) runs every 15s and on every live-list
+      request. It closes a phone broadcast that stopped sending slices (`last_chunk_at`
+      older than two minutes) and a timed window whose `expires_at` passed, then archives
+      every ended session that still has no `media` row. `saveRecording` is idempotent —
+      its insert is guarded on the recording url — so an end request racing the sweep still
+      yields one Relive item. Opening a new window ends *and archives* the previous one.
   - Limits worth knowing: capture only runs while the page is open and in the foreground
     (a backgrounded tab stops drawing the canvas, which freezes the stream), quality is
     bounded by the phone's encoder and its connection, viewers need a browser with

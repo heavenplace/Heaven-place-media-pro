@@ -78,6 +78,7 @@ CREATE TABLE IF NOT EXISTS live_sessions (
   mime text,
   recording_url text,
   chunk_count integer NOT NULL DEFAULT 0,
+  last_chunk_at timestamptz,
   started_at timestamptz NOT NULL DEFAULT now(),
   expires_at timestamptz,
   ended_at timestamptz,
@@ -136,6 +137,7 @@ ALTER TABLE live_sessions ADD COLUMN IF NOT EXISTS permanent boolean NOT NULL DE
 ALTER TABLE live_sessions ADD COLUMN IF NOT EXISTS mime text;
 ALTER TABLE live_sessions ADD COLUMN IF NOT EXISTS recording_url text;
 ALTER TABLE live_sessions ADD COLUMN IF NOT EXISTS chunk_count integer NOT NULL DEFAULT 0;
+ALTER TABLE live_sessions ADD COLUMN IF NOT EXISTS last_chunk_at timestamptz;
 ALTER TABLE live_sessions ALTER COLUMN expires_at DROP NOT NULL;
 `;
 

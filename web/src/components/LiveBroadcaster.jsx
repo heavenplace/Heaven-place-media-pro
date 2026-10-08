@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { api } from '../api.js';
+import { api, getToken } from '../api.js';
 
 /**
  * Capture presets. Constraints are sent as "ideal" so a phone that cannot do the
@@ -25,6 +25,19 @@ const WINDOWS = [
   ['24', '24 hours'],
   ['permanent', '24/7 — never ends']
 ];
+
+/**
+ * End the session from the way out. `keepalive` lets the request survive the page being
+ * unloaded, so a broadcast the owner never stopped by hand is still archived.
+ */
+function endSessionOnExit(sessionId) {
+  const token = getToken();
+  fetch(`/api/live/${sessionId}/end`, {
+    method: 'POST',
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+    keepalive: true
+  }).catch(() => {});
+}
 
 const pickMime = (audioOnly) =>
   (audioOnly ? MIME_CANDIDATES.audio : MIME_CANDIDATES.video).find(
@@ -98,9 +111,20 @@ export default function LiveBroadcaster({ station, onStarted, onEnded, notify, f
     setPreviewing(false);
   }, []);
 
-  useEffect(() => () => {
-    recorderRef.current?.state === 'recording' && recorderRef.current.stop();
-    stopAll();
+  useEffect(() => {
+    const endOnExit = () => {
+      const session = sessionRef.current;
+      if (session) endSessionOnExit(session.id);
+    };
+    // A closed tab, a phone going to sleep or a reload: the broadcast is ended on the way
+    // out, so what the phone recorded is still archived on the station as a Relive item.
+    window.addEventListener('pagehide', endOnExit);
+    return () => {
+      window.removeEventListener('pagehide', endOnExit);
+      if (recorderRef.current?.state === 'recording') recorderRef.current.stop();
+      endOnExit();
+      stopAll();
+    };
   }, [stopAll]);
 
   // Opens (or re-opens) the camera — used on start, on "switch camera" and on a

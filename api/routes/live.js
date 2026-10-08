@@ -35,12 +35,15 @@ async function sizeOf(file) {
 
 // Everything currently on air.
 router.get('/', async (_req, res) => {
+  // Cheap safety net: anything that ended by itself is archived before anyone looks.
+  await sweepLiveRecordings().catch(() => {});
   const { rows } = await q(`${SELECT} WHERE ${ON_AIR} ORDER BY l.started_at DESC`);
   res.json({ live: rows });
 });
 
 // Live windows on the stations this user owns, active first — the owner dashboard.
 router.get('/mine', auth(), async (req, res) => {
+  await sweepLiveRecordings().catch(() => {});
   const { rows } = await q(
     `${SELECT} WHERE l.station_id IN (SELECT id FROM stations WHERE owner_id = $1)
      ORDER BY ${ON_AIR} DESC, l.started_at DESC LIMIT 100`,
@@ -70,7 +73,13 @@ router.post('/', auth(), async (req, res) => {
   const forever = Boolean(permanent);
   const window = Math.min(Math.max(Number(hours) || 1, 1), 24);
 
-  await q("UPDATE live_sessions SET status = 'ended', ended_at = now() WHERE station_id = $1 AND status = 'live'", [stationId]);
+  // One broadcast at a time per station: whatever is already on air is closed, and what it
+  // recorded is archived first, so a superseded broadcast is never lost.
+  const { rows: superseded } = await q(
+    "UPDATE live_sessions SET status = 'ended', ended_at = now() WHERE station_id = $1 AND status = 'live' RETURNING *",
+    [stationId]
+  );
+  for (const session of superseded) await saveRecording(session);
 
   const { rows } = await q(
     `INSERT INTO live_sessions (station_id, media_id, title, kind, permanent, mime, expires_at, created_by)
@@ -101,7 +110,7 @@ router.post('/:id/chunk', auth(), express.raw({ type: () => true, limit: '24mb' 
   await fs.promises.appendFile(file, req.body);
 
   const { rows: updated } = await q(
-    `UPDATE live_sessions SET mime = $1, chunk_count = chunk_count + 1, recording_url = $2
+    `UPDATE live_sessions SET mime = $1, chunk_count = chunk_count + 1, recording_url = $2, last_chunk_at = now()
      WHERE id = $3 RETURNING chunk_count, recording_url`,
     [mime, recordingUrlFor(session.id, mime), session.id]
   );
@@ -122,21 +131,24 @@ router.get('/:id/manifest', async (req, res) => {
   res.json({ ...session, bytes: session.mime ? await sizeOf(fileFor(session.id, session.mime)) : 0 });
 });
 
-// A finished broadcast is archived on its station, so listeners can relive it.
+/**
+ * A finished broadcast is archived on its station so listeners can relive it: a normal
+ * `media` row with source = 'live'. The insert is guarded by the recording url, so ending
+ * a session twice — or two sweeps racing — still produces exactly one Relive item, and the
+ * id of the item that exists is returned either way.
+ */
 export async function saveRecording(session) {
-  if (!session.mime || !session.recording_url) return null;
-  const bytes = await sizeOf(fileFor(session.id, session.mime));
-  if (!bytes) return null;
+  if (!session?.mime || !session?.recording_url) return null;
 
-  const existing = await q('SELECT id FROM media WHERE url = $1', [session.recording_url]);
-  if (existing.rows.length) return existing.rows[0].id;
-
-  const ended = new Date(session.ended_at || Date.now()).getTime();
-  const started = new Date(session.started_at).getTime();
-  const seconds = Math.max(0, Math.round((ended - started) / 1000));
+  const seconds = Math.max(
+    0,
+    Math.round((new Date(session.ended_at || Date.now()).getTime() - new Date(session.started_at).getTime()) / 1000)
+  );
   const { rows } = await q(
     `INSERT INTO media (station_id, type, title, description, url, source, access, duration_seconds, created_by)
-     VALUES ($1,$2,$3,$4,$5,'live','free',$6,$7) RETURNING id`,
+     SELECT $1,$2,$3,$4,$5,'live','free',$6,$7
+     WHERE NOT EXISTS (SELECT 1 FROM media WHERE url = $5)
+     RETURNING id`,
     [
       session.station_id,
       String(session.mime).startsWith('video') ? 'video' : 'audio',
@@ -147,8 +159,52 @@ export async function saveRecording(session) {
       session.created_by
     ]
   );
-  return rows[0].id;
+  if (rows.length) return rows[0].id;
+
+  const existing = await q('SELECT id FROM media WHERE url = $1', [session.recording_url]);
+  return existing.rows[0]?.id ?? null;
 }
+
+// Mark a session over (if it still looks live) and archive what it recorded.
+export async function closeRecording(session) {
+  if (session.status === 'live') {
+    await q("UPDATE live_sessions SET status = 'ended', ended_at = coalesce(ended_at, now()) WHERE id = $1", [session.id]);
+  }
+  return saveRecording({ ...session, status: 'ended' });
+}
+
+/**
+ * The net that makes "every broadcast is saved" true. A phone that closed the tab, lost
+ * signal or was killed leaves its session looking live; so does a timed window whose time
+ * just ran out. This closes those sessions and turns the recordings they left behind into
+ * Relive items on their station. It runs on a timer, and whenever the studio asks for the
+ * live list.
+ */
+export async function sweepLiveRecordings() {
+  // A phone broadcast that stopped sending slices is over, whatever the row says.
+  await q(
+    `UPDATE live_sessions SET status = 'ended', ended_at = coalesce(last_chunk_at, now())
+     WHERE status = 'live' AND recording_url IS NOT NULL AND last_chunk_at < now() - interval '2 minutes'`
+  );
+  // So is a timed window whose time is up.
+  await q("UPDATE live_sessions SET status = 'ended', ended_at = expires_at WHERE status = 'live' AND expires_at IS NOT NULL AND expires_at <= now()");
+
+  const { rows } = await q(
+    `SELECT l.* FROM live_sessions l
+     WHERE l.status = 'ended' AND l.recording_url IS NOT NULL
+       AND NOT EXISTS (SELECT 1 FROM media m WHERE m.url = l.recording_url)`
+  );
+  const archived = [];
+  for (const session of rows) {
+    const id = await saveRecording(session);
+    if (id) archived.push(id);
+  }
+  return archived;
+}
+
+// Broadcasts nobody is watching for: a phone that went away without saying goodbye.
+const SWEEP_MS = 15000;
+setInterval(() => sweepLiveRecordings().catch(() => {}), SWEEP_MS).unref();
 
 router.post('/:id/end', auth(), async (req, res) => {
   const { rows: found } = await q('SELECT * FROM live_sessions WHERE id = $1', [req.params.id]);
