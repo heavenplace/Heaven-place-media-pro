@@ -25,6 +25,7 @@ export default function StationDashboard() {
   const [stations, setStations] = useState([]);
   const [media, setMedia] = useState([]);
   const [live, setLive] = useState([]);
+  const [earnings, setEarnings] = useState(null);
   const [stationId, setStationId] = useState(null);
   const [tab, setTab] = useState('overview');
   const [error, setError] = useState('');
@@ -36,12 +37,14 @@ export default function StationDashboard() {
       const data = await api('/stations/mine');
       setStations(data.stations);
       setStationId((current) => (data.stations.some((s) => s.id === current) ? current : data.stations[0]?.id ?? null));
-      const [mediaData, liveData] = await Promise.all([
+      const [mediaData, liveData, earningsData] = await Promise.all([
         api('/media/mine').catch(() => ({ media: [] })),
-        api('/live/mine').catch(() => ({ live: [] }))
+        api('/live/mine').catch(() => ({ live: [] })),
+        api('/earnings/mine').catch(() => null)
       ]);
       setMedia(mediaData.media);
       setLive(liveData.live);
+      setEarnings(earningsData);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -89,9 +92,10 @@ export default function StationDashboard() {
         <Empty>
           <p>You do not have a station yet.</p>
           <p className="tiny muted">
-            The control room assigns stations to their owners — ask them to put one in your name and it will appear here.
-            You can publish podcast episodes from the Podcasts tab in the meantime.
+            Apply for one — FM only, or FM with its TV twin. The control room opens it in your name once the licence
+            fee is paid, and a premium station can also publish premium and paid items. Podcasts are available right away.
           </p>
+          <Link className="btn btn-primary" to="/apply">Apply for a station</Link>
         </Empty>
       ) : (
         <>
@@ -118,7 +122,8 @@ export default function StationDashboard() {
                 <div>
                   <b>{station.name}</b>
                   <div className="tiny muted">
-                    {station.kind === 'tv' ? 'TV' : 'Radio'} · {station.status} · {stationMedia.length} items
+                    {station.kind === 'tv' ? 'TV' : 'Radio'} · {station.plan === 'premium' ? 'Premium plan' : 'Standard plan'} ·{' '}
+                    {station.status} · {stationMedia.length} items
                   </div>
                 </div>
               </div>
@@ -128,8 +133,15 @@ export default function StationDashboard() {
             </div>
           )}
 
+          {station && station.plan !== 'premium' && (
+            <p className="tiny muted" style={{ margin: 0 }}>
+              This station is on the standard plan, so it publishes free content only.{' '}
+              <Link to="/apply">Apply for the premium licence</Link> to run premium and paid items and earn from them.
+            </p>
+          )}
+
           {station && activeTab === 'overview' && (
-            <Overview station={station} media={stationMedia} live={stationLive} onOpenTab={setTab} />
+            <Overview station={station} media={stationMedia} live={stationLive} earnings={earnings} onOpenTab={setTab} />
           )}
           {station && activeTab === 'media' && (
             <MediaTab station={station} media={stationMedia} reload={load} notify={notify} fail={fail} />

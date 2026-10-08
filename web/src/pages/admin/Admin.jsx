@@ -8,13 +8,17 @@ import Podcasts from './Podcasts.jsx';
 import Live from './Live.jsx';
 import Requests from './Requests.jsx';
 import Users from './Users.jsx';
+import Applications from './Applications.jsx';
+import Revenue from './Revenue.jsx';
 
 const TABS = [
   ['overview', 'Overview', Overview],
   ['activity', 'Listener activity', Activity],
   ['stations', 'Stations', Stations],
+  ['applications', 'Applications', Applications],
   ['media', 'Media', Media],
   ['moderation', 'Moderation', Moderation],
+  ['revenue', 'Revenue', Revenue],
   ['podcasts', 'Podcasts', Podcasts],
   ['live', 'Live control', Live],
   ['requests', 'Access requests', Requests],

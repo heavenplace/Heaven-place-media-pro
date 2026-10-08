@@ -132,6 +132,51 @@ CREATE TABLE IF NOT EXISTS subscriptions (
   current_period_end timestamptz,
   created_at timestamptz NOT NULL DEFAULT now()
 );
+
+CREATE TABLE IF NOT EXISTS payouts (
+  id serial PRIMARY KEY,
+  owner_id integer REFERENCES users(id) ON DELETE CASCADE,
+  amount_cents integer NOT NULL DEFAULT 0,
+  note text,
+  settled_by integer REFERENCES users(id) ON DELETE SET NULL,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+
+-- What listeners have paid for a station's premium content. One row per sale;
+-- payout_id is filled in when the control room settles that owner's balance.
+CREATE TABLE IF NOT EXISTS earnings (
+  id serial PRIMARY KEY,
+  station_id integer REFERENCES stations(id) ON DELETE CASCADE,
+  owner_id integer REFERENCES users(id) ON DELETE SET NULL,
+  buyer_id integer REFERENCES users(id) ON DELETE SET NULL,
+  media_id integer REFERENCES media(id) ON DELETE SET NULL,
+  kind text NOT NULL DEFAULT 'download',
+  amount_cents integer NOT NULL DEFAULT 0,
+  stripe_session_id text UNIQUE,
+  payout_id integer REFERENCES payouts(id) ON DELETE SET NULL,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+
+-- A listener's request to open a station: FM only, or FM with a TV twin.
+CREATE TABLE IF NOT EXISTS station_applications (
+  id serial PRIMARY KEY,
+  user_id integer REFERENCES users(id) ON DELETE CASCADE,
+  station_name text NOT NULL,
+  description text,
+  coverage text NOT NULL DEFAULT 'fm',
+  plan text NOT NULL DEFAULT 'standard',
+  fee_cents integer NOT NULL DEFAULT 500,
+  fee_status text NOT NULL DEFAULT 'unpaid',
+  paid_at timestamptz,
+  checkout_session_id text,
+  status text NOT NULL DEFAULT 'pending',
+  review_note text,
+  reviewed_by integer REFERENCES users(id) ON DELETE SET NULL,
+  reviewed_at timestamptz,
+  station_id integer REFERENCES stations(id) ON DELETE SET NULL,
+  tv_station_id integer REFERENCES stations(id) ON DELETE SET NULL,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
 `;
 
 // Columns added after the first release. ADD COLUMN IF NOT EXISTS keeps this idempotent,
@@ -147,6 +192,9 @@ ALTER TABLE media ADD COLUMN IF NOT EXISTS flag_reason text;
 ALTER TABLE media ADD COLUMN IF NOT EXISTS flagged_at timestamptz;
 ALTER TABLE media ADD COLUMN IF NOT EXISTS flagged_by integer REFERENCES users(id) ON DELETE SET NULL;
 ALTER TABLE live_sessions ALTER COLUMN expires_at DROP NOT NULL;
+-- 'standard' stations publish free content; 'premium' (the $15 licence) may also
+-- publish premium and paid items and earn from what listeners buy.
+ALTER TABLE stations ADD COLUMN IF NOT EXISTS plan text NOT NULL DEFAULT 'standard';
 `;
 
 export async function ensureSchema() {
@@ -187,8 +235,9 @@ export async function ensureSeed() {
   ];
   const ids = {};
   for (const [name, kind, description, artwork_url, status, verified] of stations) {
+    // Seeded on the premium licence: the demo stations carry premium and paid items.
     const { rows: r } = await q(
-      'INSERT INTO stations (name, kind, description, artwork_url, status, verified, owner_id) VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id',
+      "INSERT INTO stations (name, kind, description, artwork_url, status, verified, owner_id, plan) VALUES ($1,$2,$3,$4,$5,$6,$7,'premium') RETURNING id",
       [name, kind, description, artwork_url, status, verified, owner]
     );
     ids[name] = r[0].id;

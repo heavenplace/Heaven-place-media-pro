@@ -9,7 +9,8 @@ const LINKS = [
   { to: '/library', label: 'Library' },
   { to: '/favorites', label: 'Favorites' },
   { to: '/premium', label: 'Premium' },
-  { to: '/studio', label: 'Studio' }
+  { to: '/studio', label: 'Studio' },
+  { to: '/apply', label: 'Get a station' }
 ];
 
 export default function Layout() {

@@ -139,6 +139,37 @@ key — a placeholder only makes the app start, it does not take money.
   BEFORE `express.json()` because the signature check needs the raw body — keep that
   order. The manual request/approval flow is unchanged and is what the Premium page
   falls back to when no Stripe key is set.
+- **Stations are licensed, and listeners apply for one.** `web/src/pages/Apply.jsx`
+  (`/apply`) offers **FM only** or **FM + TV** and a licence: **standard $5** or
+  **premium $15** (`STATION_FEE_STANDARD_CENTS` / `STATION_FEE_PREMIUM_CENTS`, published
+  as `station_fees` in `GET /api/config`). The fee is paid by card as the application is
+  submitted: `POST /api/applications` records it, `POST /api/applications/:id/checkout`
+  opens the Stripe session, and `fulfil()` sets `fee_status = 'paid'` idempotently, so a
+  confirm plus a webhook still pays once. `GET /api/applications/mine` is what the
+  applicant sees. Without a Stripe key the application is still recorded and the control
+  room collects the fee with "Mark fee collected" (`POST /api/admin/applications/:id/fee`)
+  — the same manual-fallback shape as Premium.
+  - The control room's **Applications** tab is `GET /api/admin/applications`;
+    `POST /api/admin/applications/:id/review` takes `{ action: 'approve' | 'reject', note }`.
+    Approving needs `fee_status = 'paid'` and opens the station in the applicant's name on
+    the plan they paid for — plus a second station named `<name> TV` for an FM + TV
+    application. Both ids are kept on the application (`station_id`, `tv_station_id`).
+- **The licence governs premium content.** `stations.plan` is `standard` or `premium`, and
+  only a premium station may publish `access = 'premium'` or `'paid'` items: the API
+  refuses with 403 when creating one or when an edit sets that access
+  (`standardPlanStation` in `api/guards.js`), naming the station that must upgrade. The
+  Publish form disables those two choices on a standard station. Demo stations are seeded
+  on the premium licence, because the demo media includes premium and paid items.
+- **Station revenue is a ledger the control room settles, not an automatic transfer.** A
+  paid download credits the publishing station's owner in `earnings` — `creditEarnings` in
+  `api/payments.js`, keyed on the checkout session so a double fulfilment credits once.
+  Only `kind = 'download'` reaches the ledger: a membership is platform-wide and has no
+  single station behind it. The studio's Overview shows the station's earned, sales and
+  outstanding balance (`GET /api/earnings/mine`); the control room's **Revenue** tab
+  (`GET /api/admin/earnings`) lists owners with earned/settled/outstanding, every sale and
+  the payout history, and `POST /api/admin/payouts` writes one `payouts` row for an owner's
+  whole outstanding balance and marks those `earnings` rows settled. Nothing is transferred
+  by the app — the money moves outside it, and the payout row is the record.
 - **Moderation** is the control room's review desk (`web/src/pages/admin/Moderation.jsx`,
   the Moderation tab). It lists creator-published media — uploads, phone recordings and
   Relive captures — with the station and the owner behind each item, and offers four

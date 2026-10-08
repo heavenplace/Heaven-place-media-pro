@@ -1,7 +1,7 @@
 import express from 'express';
 import { q } from '../db.js';
 import { auth } from '../auth.js';
-import { canManageStation, hasDownloadEntitlement, isPremium, logActivity } from '../guards.js';
+import { canManageStation, hasDownloadEntitlement, isPremium, logActivity, standardPlanStation } from '../guards.js';
 
 const router = express.Router();
 
@@ -52,6 +52,13 @@ router.post('/', auth(), async (req, res) => {
   if (access === 'paid' && Number(price_cents) < 50) {
     return res.status(400).json({ error: 'Paid downloads must be priced at 0.50 or more' });
   }
+  // Premium and paid content is what the premium station licence buys.
+  const lockedStation = access === 'free' ? null : await standardPlanStation(Number(station_id));
+  if (lockedStation) {
+    return res.status(403).json({
+      error: `${lockedStation} is on the standard plan — premium and paid content needs the premium plan`
+    });
+  }
   const { rows } = await q(
     `INSERT INTO media (station_id, type, title, description, url, source, access, price_cents, duration_seconds, downloadable, created_by)
      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING *`,
@@ -67,6 +74,15 @@ router.patch('/:id', auth(), async (req, res) => {
   if (!found.length) return res.status(404).json({ error: 'Media not found' });
   if (!(await canManageStation(req.user, found[0].station_id))) {
     return res.status(403).json({ error: 'Only the station owner or an admin can edit this media' });
+  }
+  // Same rule as publishing: only a premium station may put an item behind premium or a price.
+  if (req.body?.access && req.body.access !== 'free') {
+    const lockedStation = await standardPlanStation(found[0].station_id);
+    if (lockedStation) {
+      return res.status(403).json({
+        error: `${lockedStation} is on the standard plan — premium and paid content needs the premium plan`
+      });
+    }
   }
   const allowed = ['title', 'description', 'access', 'price_cents', 'visible', 'downloadable', 'url', 'duration_seconds'];
   const sets = [];

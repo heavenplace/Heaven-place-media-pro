@@ -10,6 +10,15 @@ import { logActivity } from './guards.js';
 
 export const PREMIUM_PRICE_CENTS = Number(process.env.PREMIUM_PRICE_CENTS) || 600;
 
+// A station licence: $5 on the standard plan, $15 on premium. Premium is what
+// carries the right to publish premium and paid content.
+export const STATION_FEES = {
+  standard: Number(process.env.STATION_FEE_STANDARD_CENTS) || 500,
+  premium: Number(process.env.STATION_FEE_PREMIUM_CENTS) || 1500
+};
+
+export const stationFee = (plan) => STATION_FEES[plan] ?? STATION_FEES.standard;
+
 export const paymentsEnabled = () => Boolean(process.env.STRIPE_SECRET_KEY);
 
 let client = null;
@@ -52,6 +61,25 @@ const fulfilDownload = async (userId, mediaId) => {
   }
 };
 
+// What a listener paid for an item is money the station that published it earned.
+// Keying the row on the checkout session keeps a double fulfilment (confirm +
+// webhook) to a single sale. A membership is platform-wide with no single station
+// behind it, so only item sales reach the ledger.
+const creditEarnings = async (session, userId, mediaId) => {
+  const { rows } = await q(
+    `SELECT m.price_cents, s.id AS station_id, s.owner_id
+     FROM media m JOIN stations s ON s.id = m.station_id WHERE m.id = $1`,
+    [mediaId]
+  );
+  const sale = rows[0];
+  if (!sale?.owner_id) return;
+  await q(
+    `INSERT INTO earnings (station_id, owner_id, buyer_id, media_id, kind, amount_cents, stripe_session_id)
+     VALUES ($1,$2,$3,$4,'download',$5,$6) ON CONFLICT (stripe_session_id) DO NOTHING`,
+    [sale.station_id, sale.owner_id, userId, mediaId, sale.price_cents, session.id]
+  );
+};
+
 // Stripe moved the period end onto the subscription item in newer API
 // versions, so read whichever one this account returns; fall back to 30 days.
 const subscriptionPeriodEnd = (subscription) => {
@@ -67,10 +95,22 @@ const subscriptionPeriodEnd = (subscription) => {
 export async function fulfil(session) {
   const kind = session?.metadata?.kind;
   const userId = Number(session?.metadata?.user_id);
-  if (!userId || !['premium', 'download'].includes(kind)) return null;
+  if (!userId || !['premium', 'download', 'application'].includes(kind)) return null;
 
   const settled = session.mode === 'subscription' ? session.status === 'complete' : session.payment_status === 'paid';
   if (!settled) return null;
+
+  if (kind === 'application') {
+    const applicationId = Number(session.metadata.application_id);
+    if (!applicationId) return null;
+    const { rows } = await q(
+      `UPDATE station_applications SET fee_status = 'paid', paid_at = coalesce(paid_at, now())
+       WHERE id = $1 AND user_id = $2 AND fee_status <> 'paid' RETURNING station_name`,
+      [applicationId, userId]
+    );
+    if (rows.length) await logActivity(userId, 'payment', `Paid the station licence fee for ${rows[0].station_name}`);
+    return { kind: 'application', message: 'Licence fee received — the control room will review your application.' };
+  }
 
   if (kind === 'premium') {
     await fulfilPremium(userId, subscriptionPeriodEnd(session.subscription));
@@ -81,6 +121,7 @@ export async function fulfil(session) {
   const mediaId = Number(session.metadata.media_id);
   if (!mediaId) return null;
   await fulfilDownload(userId, mediaId);
+  await creditEarnings(session, userId, mediaId);
   const { rows } = await q('SELECT title FROM media WHERE id = $1', [mediaId]);
   await logActivity(userId, 'payment', `Paid for ${rows[0]?.title || 'a download'} by card`);
   return { kind: 'download', message: `Payment received — ${rows[0]?.title || 'your download'} is unlocked.` };

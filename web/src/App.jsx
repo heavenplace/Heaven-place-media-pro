@@ -8,6 +8,7 @@ import Library from './pages/Library.jsx';
 import Favorites from './pages/Favorites.jsx';
 import Premium from './pages/Premium.jsx';
 import Studio from './pages/Studio.jsx';
+import Apply from './pages/Apply.jsx';
 import Auth from './pages/Auth.jsx';
 import Admin from './pages/admin/Admin.jsx';
 import { useAuth } from './AuthContext.jsx';
@@ -44,6 +45,7 @@ export default function App() {
         <Route path="tv" element={<Directory kind="tv" />} />
         <Route path="station/:id" element={<StationDetail />} />
         <Route path="podcasts" element={<Podcasts />} />
+        <Route path="apply" element={<Apply />} />
         <Route path="library" element={<Library />} />
         <Route path="favorites" element={<Favorites />} />
         <Route path="premium" element={<Premium />} />

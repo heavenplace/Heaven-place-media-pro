@@ -34,3 +34,11 @@ export async function hasDownloadEntitlement(user, mediaId) {
   );
   return rows.length > 0;
 }
+
+// Publishing premium or paid content is what the premium station licence buys.
+// Returns the station's name when it is still on the standard plan, so the caller
+// can name the station that has to be upgraded.
+export async function standardPlanStation(stationId) {
+  const { rows } = await q('SELECT name, plan FROM stations WHERE id = $1', [stationId]);
+  return rows.length && rows[0].plan !== 'premium' ? rows[0].name : null;
+}

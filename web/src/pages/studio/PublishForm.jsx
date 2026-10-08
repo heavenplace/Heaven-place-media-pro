@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { Link } from 'react-router-dom';
 import { api, formatDuration } from '../../api.js';
 import FileDrop from '../../components/FileDrop.jsx';
 
@@ -80,9 +81,14 @@ export default function PublishForm({ station, reload, notify, fail }) {
           <label>Access</label>
           <select value={draft.access} onChange={(event) => setDraft({ ...draft, access: event.target.value })}>
             <option value="free">Free</option>
-            <option value="premium">Premium</option>
-            <option value="paid">Paid download</option>
+            <option value="premium" disabled={station.plan !== 'premium'}>Premium</option>
+            <option value="paid" disabled={station.plan !== 'premium'}>Paid download</option>
           </select>
+          {station.plan !== 'premium' && (
+            <div className="tiny muted" style={{ marginTop: 6 }}>
+              Premium and paid items need the premium licence — <Link to="/apply">apply for it</Link>.
+            </div>
+          )}
         </div>
         {draft.access === 'paid' && (
           <div style={{ width: 170 }}>

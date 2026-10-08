@@ -1,9 +1,9 @@
 import { LiveBadge } from '../../components/Cards.jsx';
-import { formatDuration } from '../../api.js';
+import { formatDuration, formatMoney } from '../../api.js';
 
 const isOnAir = (session) => session.status === 'live' && (!session.expires_at || new Date(session.expires_at) > new Date());
 
-export default function Overview({ station, media, live, onOpenTab }) {
+export default function Overview({ station, media, live, earnings, onOpenTab }) {
   const totalSeconds = media.reduce((sum, item) => sum + (item.duration_seconds || 0), 0);
   const hidden = media.filter((item) => !item.visible).length;
   const gated = media.filter((item) => item.access !== 'free').length;
@@ -11,6 +11,7 @@ export default function Overview({ station, media, live, onOpenTab }) {
   const relive = media.filter((item) => item.source === 'live').length;
   const onAir = live.find(isOnAir) ?? null;
   const recent = [...live].slice(0, 4);
+  const money = earnings?.stations?.find((row) => row.id === station.id) ?? null;
 
   return (
     <div className="stack" style={{ gap: 18 }}>
@@ -20,6 +21,30 @@ export default function Overview({ station, media, live, onOpenTab }) {
         <div className="stat"><b>{formatDuration(totalSeconds)}</b><span>Total runtime</span></div>
         <div className="stat"><b>{unlocks}</b><span>Paid unlocks</span></div>
       </div>
+
+      {earnings && (
+        <section className="panel stack">
+          <div className="between">
+            <h2>Earnings</h2>
+            <span className="tiny muted">The control room settles payouts</span>
+          </div>
+          <div className="grid grid-stats">
+            <div className="stat"><b>{formatMoney(money?.earned_cents ?? 0)}</b><span>Earned on this station</span></div>
+            <div className="stat"><b>{money?.sales ?? 0}</b><span>Paid sales</span></div>
+            <div className="stat"><b>{formatMoney(money?.outstanding_cents ?? 0)}</b><span>Outstanding</span></div>
+            <div className="stat"><b>{formatMoney(earnings.settled_cents)}</b><span>Settled so far</span></div>
+          </div>
+          {station.plan !== 'premium' ? (
+            <p className="tiny muted" style={{ margin: 0 }}>
+              Selling needs the premium licence — this station is on the standard plan, so it publishes free content only.
+            </p>
+          ) : (
+            <p className="tiny muted" style={{ margin: 0 }}>
+              Listeners pay by card; whatever they buy from this station lands here until the control room settles it.
+            </p>
+          )}
+        </section>
+      )}
 
       {hidden > 0 && <p className="tiny muted" style={{ margin: 0 }}>{hidden} item{hidden === 1 ? '' : 's'} hidden from listeners.</p>}
       {relive > 0 && <p className="tiny muted" style={{ margin: 0 }}>{relive} Relive recording{relive === 1 ? '' : 's'} on the station page.</p>}

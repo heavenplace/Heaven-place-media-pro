@@ -10,10 +10,12 @@ import liveRoutes from './routes/live.js';
 import podcastRoutes from './routes/podcasts.js';
 import favoriteRoutes from './routes/favorites.js';
 import requestRoutes from './routes/requests.js';
+import applicationRoutes from './routes/applications.js';
+import earningsRoutes from './routes/earnings.js';
 import paymentRoutes from './routes/payments.js';
 import adminRoutes from './routes/admin.js';
 import { googleEnabled } from './google.js';
-import { PREMIUM_PRICE_CENTS, paymentsEnabled, webhook as stripeWebhook } from './payments.js';
+import { PREMIUM_PRICE_CENTS, STATION_FEES, paymentsEnabled, webhook as stripeWebhook } from './payments.js';
 
 const app = express();
 const PORT = Number(process.env.PORT) || 8000;
@@ -45,7 +47,8 @@ app.get('/api/config', (_req, res) =>
   res.json({
     google_client_id: googleEnabled() ? process.env.GOOGLE_CLIENT_ID : null,
     payments_enabled: paymentsEnabled(),
-    premium_price_cents: PREMIUM_PRICE_CENTS
+    premium_price_cents: PREMIUM_PRICE_CENTS,
+    station_fees: STATION_FEES
   })
 );
 
@@ -58,6 +61,8 @@ app.use('/api/live', liveRoutes);
 app.use('/api/podcasts', podcastRoutes);
 app.use('/api/favorites', favoriteRoutes);
 app.use('/api/requests', requestRoutes);
+app.use('/api/applications', applicationRoutes);
+app.use('/api/earnings', earningsRoutes);
 app.use('/api/payments', paymentRoutes);
 app.use('/api/admin', adminRoutes);
 

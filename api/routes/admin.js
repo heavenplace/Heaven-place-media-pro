@@ -69,11 +69,12 @@ router.get('/stations', async (req, res) => {
 
 // The content desk: rename, re-describe, reassign or retire a station.
 router.patch('/stations/:id', async (req, res) => {
-  const { status, verified, name, kind, description, artwork_url, owner_id } = req.body ?? {};
+  const { status, verified, name, kind, description, artwork_url, owner_id, plan } = req.body ?? {};
   if (status && !['pending', 'approved', 'suspended'].includes(status)) {
     return res.status(400).json({ error: 'Unknown station status' });
   }
   if (kind && !['radio', 'tv'].includes(kind)) return res.status(400).json({ error: 'Station type must be radio or tv' });
+  if (plan && !['standard', 'premium'].includes(plan)) return res.status(400).json({ error: 'Unknown station licence' });
   if (name !== undefined && !String(name).trim()) return res.status(400).json({ error: 'A station name is required' });
 
   const sets = [];
@@ -88,6 +89,7 @@ router.patch('/stations/:id', async (req, res) => {
   if (artwork_url !== undefined) add('artwork_url', artwork_url);
   if (owner_id !== undefined) add('owner_id', owner_id ? Number(owner_id) : null);
   if (status) add('status', status);
+  if (plan) add('plan', plan);
   if (verified !== undefined) add('verified', Boolean(verified));
   if (!sets.length) return res.status(400).json({ error: 'Nothing to update' });
   params.push(Number(req.params.id));
@@ -271,6 +273,131 @@ router.post('/live/:id/end', async (req, res) => {
   const relive = await saveRecording(rows[0]);
   await logActivity(req.user.id, 'live_end', `${req.user.name} took ${rows[0].title} off air`, rows[0].station_id);
   res.json({ session: rows[0], relive });
+});
+
+// ---- Station applications --------------------------------------------------
+// Listeners apply for a station, pay the licence fee by card and wait for review.
+// Approving opens the station — and its TV twin — in the applicant's own name.
+router.get('/applications', async (req, res) => {
+  const params = [];
+  let where = '';
+  if (req.query.status) {
+    params.push(req.query.status);
+    where = 'WHERE a.status = $1';
+  }
+  const { rows } = await q(
+    `SELECT a.*, u.name AS user_name, u.email AS user_email
+     FROM station_applications a LEFT JOIN users u ON u.id = a.user_id ${where}
+     ORDER BY CASE a.status WHEN 'pending' THEN 0 ELSE 1 END, a.created_at DESC LIMIT 200`,
+    params
+  );
+  res.json({ applications: rows });
+});
+
+// The card checkout records the fee itself; this covers one settled another way.
+router.post('/applications/:id/fee', async (req, res) => {
+  const paid = req.body?.paid !== false;
+  const { rows } = await q(
+    `UPDATE station_applications
+     SET fee_status = $2, paid_at = CASE WHEN $2 = 'paid' THEN coalesce(paid_at, now()) ELSE null END
+     WHERE id = $1 RETURNING *`,
+    [Number(req.params.id), paid ? 'paid' : 'unpaid']
+  );
+  if (!rows.length) return res.status(404).json({ error: 'Application not found' });
+  await logActivity(req.user.id, 'station_review', `${req.user.name} marked the fee for ${rows[0].station_name} as ${paid ? 'collected' : 'uncollected'}`);
+  res.json({ application: rows[0] });
+});
+
+// A TV twin takes "TV" after the applicant's name unless they already used it.
+const tvStationName = (name) => (/tv$/i.test(String(name).trim()) ? String(name).trim() : `${String(name).trim()} TV`);
+
+router.post('/applications/:id/review', async (req, res) => {
+  const action = String(req.body?.action ?? '');
+  if (!['approve', 'reject'].includes(action)) return res.status(400).json({ error: 'Approve or reject the application' });
+
+  const { rows: found } = await q('SELECT * FROM station_applications WHERE id = $1', [Number(req.params.id)]);
+  if (!found.length) return res.status(404).json({ error: 'Application not found' });
+  const application = found[0];
+  if (application.status !== 'pending') return res.status(409).json({ error: 'That application has already been reviewed' });
+
+  const note = String(req.body?.note ?? '').trim() || null;
+
+  if (action === 'reject') {
+    const { rows } = await q(
+      `UPDATE station_applications SET status = 'rejected', review_note = $2, reviewed_by = $3, reviewed_at = now()
+       WHERE id = $1 RETURNING *`,
+      [application.id, note, req.user.id]
+    );
+    await logActivity(req.user.id, 'station_review', `${req.user.name} rejected the application for ${application.station_name}`);
+    return res.json({ application: rows[0] });
+  }
+
+  if (application.fee_status !== 'paid') {
+    return res.status(402).json({ error: 'That licence fee has not been paid yet' });
+  }
+
+  const open = async (name, kind) => {
+    const { rows } = await q(
+      `INSERT INTO stations (name, kind, description, status, owner_id, plan)
+       VALUES ($1,$2,$3,'approved',$4,$5) RETURNING *`,
+      [name, kind, application.description, application.user_id, application.plan]
+    );
+    await logActivity(req.user.id, 'station_create', `${req.user.name} opened ${name} for ${application.station_name}'s applicant`, rows[0].id);
+    return rows[0];
+  };
+
+  const fm = await open(application.station_name, 'radio');
+  const tv = application.coverage === 'fm_tv' ? await open(tvStationName(application.station_name), 'tv') : null;
+
+  const { rows } = await q(
+    `UPDATE station_applications SET status = 'approved', review_note = $2, reviewed_by = $3, reviewed_at = now(),
+       station_id = $4, tv_station_id = $5 WHERE id = $1 RETURNING *`,
+    [application.id, note, req.user.id, fm.id, tv?.id ?? null]
+  );
+  res.json({ application: rows[0], stations: [fm, tv].filter(Boolean) });
+});
+
+// ---- Station revenue -------------------------------------------------------
+// The earnings ledger: what listeners paid for premium content, per owner, with
+// every sale and recorded payout behind it.
+router.get('/earnings', async (_req, res) => {
+  const [owners, sales, payouts] = await Promise.all([
+    q(`SELECT u.id AS owner_id, u.name AS owner_name, u.email AS owner_email,
+              count(e.id)::int AS sales,
+              coalesce(sum(e.amount_cents),0)::int AS earned_cents,
+              coalesce(sum(e.amount_cents) FILTER (WHERE e.payout_id IS NOT NULL),0)::int AS settled_cents
+       FROM earnings e JOIN users u ON u.id = e.owner_id
+       GROUP BY u.id ORDER BY earned_cents DESC`),
+    q(`SELECT e.*, s.name AS station_name, s.plan, m.title AS media_title, u.name AS buyer_name
+       FROM earnings e
+       LEFT JOIN stations s ON s.id = e.station_id
+       LEFT JOIN media m ON m.id = e.media_id
+       LEFT JOIN users u ON u.id = e.buyer_id
+       ORDER BY e.created_at DESC LIMIT 100`),
+    q('SELECT p.*, u.name AS owner_name FROM payouts p LEFT JOIN users u ON u.id = p.owner_id ORDER BY p.created_at DESC LIMIT 100')
+  ]);
+  res.json({ owners: owners.rows, earnings: sales.rows, payouts: payouts.rows });
+});
+
+// Settling closes out every unpaid sale for that owner at once; the money itself
+// moves outside the app, so this records the payout rather than sending it.
+router.post('/payouts', async (req, res) => {
+  const ownerId = Number(req.body?.owner_id);
+  if (!ownerId) return res.status(400).json({ error: 'Which owner is this payout for?' });
+
+  const { rows: due } = await q(
+    'SELECT coalesce(sum(amount_cents),0)::int AS cents FROM earnings WHERE owner_id = $1 AND payout_id IS NULL',
+    [ownerId]
+  );
+  if (!due[0].cents) return res.status(400).json({ error: 'That owner has nothing outstanding' });
+
+  const { rows: created } = await q(
+    'INSERT INTO payouts (owner_id, amount_cents, note, settled_by) VALUES ($1,$2,$3,$4) RETURNING *',
+    [ownerId, due[0].cents, String(req.body?.note ?? '').trim() || null, req.user.id]
+  );
+  await q('UPDATE earnings SET payout_id = $1 WHERE owner_id = $2 AND payout_id IS NULL', [created[0].id, ownerId]);
+  await logActivity(req.user.id, 'payout', `${req.user.name} settled $${(created[0].amount_cents / 100).toFixed(2)} of station earnings`);
+  res.status(201).json({ payout: created[0] });
 });
 
 export default router;

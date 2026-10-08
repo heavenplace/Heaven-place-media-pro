@@ -129,6 +129,7 @@ export default function Stations() {
                 <th>Owner</th>
                 <th>Items</th>
                 <th>Status</th>
+                <th>Licence</th>
                 <th>Verified</th>
                 <th />
               </tr>
@@ -166,6 +167,16 @@ export default function Stations() {
                   <td>
                     <select value={station.status} onChange={(event) => update(station, { status: event.target.value })} style={{ width: 130 }}>
                       {STATUSES.map((status) => <option key={status} value={status}>{status}</option>)}
+                    </select>
+                  </td>
+                  <td>
+                    <select
+                      value={station.plan ?? 'standard'}
+                      onChange={(event) => update(station, { plan: event.target.value })}
+                      style={{ width: 120 }}
+                    >
+                      <option value="standard">standard</option>
+                      <option value="premium">premium</option>
                     </select>
                   </td>
                   <td>{station.verified ? 'Yes' : 'No'}</td>
