@@ -1,5 +1,6 @@
 package pro.streamcast.controlroom
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -33,6 +34,7 @@ import pro.streamcast.core.Message
 import pro.streamcast.core.Notice
 import pro.streamcast.core.Pill
 import pro.streamcast.core.PrimaryButton
+import pro.streamcast.core.RowCard
 import pro.streamcast.core.SectionTitle
 import pro.streamcast.core.TextInput
 import pro.streamcast.core.objects

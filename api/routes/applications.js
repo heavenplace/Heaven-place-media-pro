@@ -45,8 +45,13 @@ router.post('/:id/checkout', auth(), async (req, res) => {
   const stripe = stripeClient();
   if (!stripe) return res.status(503).json({ error: 'Card payments are not switched on yet' });
 
+  const applicationId = Number(req.params.id);
+  if (!Number.isInteger(applicationId) || applicationId <= 0) {
+    return res.status(404).json({ error: 'That application could not be found' });
+  }
+
   const { rows } = await q('SELECT * FROM station_applications WHERE id = $1 AND user_id = $2', [
-    Number(req.params.id),
+    applicationId,
     req.user.id
   ]);
   const application = rows[0];
