@@ -177,6 +177,20 @@ CREATE TABLE IF NOT EXISTS station_applications (
   tv_station_id integer REFERENCES stations(id) ON DELETE SET NULL,
   created_at timestamptz NOT NULL DEFAULT now()
 );
+
+-- Where an owner's settled earnings should be sent: one row per account, entered by
+-- the owner in the studio and read by the control room when it records a payout. It is
+-- a record for a manual transfer, not a payment credential — nothing is transferred by
+-- the app.
+CREATE TABLE IF NOT EXISTS payout_accounts (
+  user_id integer PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  account_name text NOT NULL,
+  bank_name text NOT NULL,
+  account_number text NOT NULL,
+  routing_number text,
+  note text,
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
 `;
 
 // Columns added after the first release. ADD COLUMN IF NOT EXISTS keeps this idempotent,

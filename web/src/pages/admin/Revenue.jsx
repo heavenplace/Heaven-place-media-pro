@@ -20,7 +20,10 @@ export default function Revenue() {
 
   const settle = async (owner) => {
     const outstanding = owner.earned_cents - owner.settled_cents;
-    if (!window.confirm(`Record a payout of ${formatMoney(outstanding)} to ${owner.owner_name}?`)) return;
+    const destination = owner.account_number
+      ? ` — ${owner.account_name}, ${owner.bank_name} ${owner.account_number}`
+      : ' (no payout details on file)';
+    if (!window.confirm(`Record a payout of ${formatMoney(outstanding)} to ${owner.owner_name}${destination}?`)) return;
     setError('');
     setNotice('');
     try {
@@ -67,6 +70,13 @@ export default function Revenue() {
                       <td>
                         {owner.owner_name}
                         <div className="tiny muted">{owner.owner_email}</div>
+                        <div className="tiny muted" style={{ marginTop: 4 }}>
+                          {owner.account_number
+                            ? `Payout: ${owner.account_name} · ${owner.bank_name} · ${owner.account_number}${
+                                owner.routing_number ? ` · ${owner.routing_number}` : ''
+                              }`
+                            : 'No payout details on file'}
+                        </div>
                       </td>
                       <td>{owner.sales}</td>
                       <td>{formatMoney(owner.earned_cents)}</td>

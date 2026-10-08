@@ -39,4 +39,45 @@ router.get('/mine', auth(), async (req, res) => {
   });
 });
 
+// Where this owner wants settled earnings sent. One profile per account — an owner can
+// have several stations — and the control room reads it when it records a manual payout.
+const ACCOUNT_FIELDS = ['account_name', 'bank_name', 'account_number', 'routing_number', 'note'];
+
+const cleanAccount = (body) => {
+  const account = Object.fromEntries(ACCOUNT_FIELDS.map((name) => [name, String(body?.[name] ?? '').trim()]));
+  account.routing_number ||= null;
+  account.note ||= null;
+  return account;
+};
+
+router.get('/account', auth(), async (req, res) => {
+  const { rows } = await q('SELECT * FROM payout_accounts WHERE user_id = $1', [req.user.id]);
+  res.json({ account: rows[0] ?? null });
+});
+
+router.put('/account', auth(), async (req, res) => {
+  const account = cleanAccount(req.body);
+  if (!account.account_name || !account.bank_name || !account.account_number) {
+    return res.status(400).json({ error: 'Account holder, bank name and account number are required' });
+  }
+  const { rows } = await q(
+    `INSERT INTO payout_accounts (user_id, account_name, bank_name, account_number, routing_number, note)
+     VALUES ($1,$2,$3,$4,$5,$6)
+     ON CONFLICT (user_id) DO UPDATE SET
+       account_name = excluded.account_name, bank_name = excluded.bank_name,
+       account_number = excluded.account_number, routing_number = excluded.routing_number,
+       note = excluded.note, updated_at = now()
+     RETURNING *`,
+    [
+      req.user.id,
+      account.account_name,
+      account.bank_name,
+      account.account_number,
+      account.routing_number,
+      account.note
+    ]
+  );
+  res.json({ account: rows[0] });
+});
+
 export default router;

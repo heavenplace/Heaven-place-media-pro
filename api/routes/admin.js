@@ -365,9 +365,13 @@ router.get('/earnings', async (_req, res) => {
     q(`SELECT u.id AS owner_id, u.name AS owner_name, u.email AS owner_email,
               count(e.id)::int AS sales,
               coalesce(sum(e.amount_cents),0)::int AS earned_cents,
-              coalesce(sum(e.amount_cents) FILTER (WHERE e.payout_id IS NOT NULL),0)::int AS settled_cents
-       FROM earnings e JOIN users u ON u.id = e.owner_id
-       GROUP BY u.id ORDER BY earned_cents DESC`),
+              coalesce(sum(e.amount_cents) FILTER (WHERE e.payout_id IS NOT NULL),0)::int AS settled_cents,
+              pa.account_name, pa.bank_name, pa.account_number, pa.routing_number, pa.note AS account_note
+       FROM earnings e
+       JOIN users u ON u.id = e.owner_id
+       LEFT JOIN payout_accounts pa ON pa.user_id = u.id
+       GROUP BY u.id, pa.account_name, pa.bank_name, pa.account_number, pa.routing_number, pa.note
+       ORDER BY earned_cents DESC`),
     q(`SELECT e.*, s.name AS station_name, s.plan, m.title AS media_title, u.name AS buyer_name
        FROM earnings e
        LEFT JOIN stations s ON s.id = e.station_id

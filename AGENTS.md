@@ -170,6 +170,15 @@ key — a placeholder only makes the app start, it does not take money.
   the payout history, and `POST /api/admin/payouts` writes one `payouts` row for an owner's
   whole outstanding balance and marks those `earnings` rows settled. Nothing is transferred
   by the app — the money moves outside it, and the payout row is the record.
+- **Owners leave the control room somewhere to send the money.** `payout_accounts` (one row
+  per user) holds `account_name`, `bank_name`, `account_number`, an optional
+  `routing_number` and a free-text `note`. The owner enters them in the studio's **Station
+  settings** tab (`web/src/pages/studio/PayoutSettings.jsx`, `GET`/`PUT
+  /api/earnings/account`); one profile covers every station the account owns. The Revenue
+  tab shows the details beside each owner and the payout confirmation names where the money
+  is going. They are kept as typed — a record for a manual transfer, not a payment
+  credential held by a provider — and the API returns them only to the owning account and
+  to admins.
 - **Moderation** is the control room's review desk (`web/src/pages/admin/Moderation.jsx`,
   the Moderation tab). It lists creator-published media — uploads, phone recordings and
   Relive captures — with the station and the owner behind each item, and offers four
