@@ -5,8 +5,14 @@
  * built against, and the parts of it that can differ are configuration rather than
  * code (see AGENTS.md → "PrcPay"):
  *
- *   POST {PRCPAY_BASE_URL}/payments  { merchant, account, amount, currency, reference, description }
- *   POST {PRCPAY_BASE_URL}/payouts   { merchant, amount, currency, account, reference, description }
+ *   POST {PRCPAY_BASE_URL}/charge    { merchant, account, amount, currency, reference, description }
+ *   POST {PRCPAY_BASE_URL}/transfer  { merchant, amount, currency, account, reference, description }
+ *
+ * Both endpoint paths are configuration too (`PRCPAY_CHARGE_PATH`,
+ * `PRCPAY_TRANSFER_PATH`), so a PrcPay that names them differently needs no code
+ * change. `PRCPAY_BASE_URL` carries whatever prefix the API needs: the local
+ * development stand-in is `http://prcpay:3001/api`, so its endpoints are
+ * `/api/charge` and `/api/transfer`.
  *
  * `merchant` is this platform's own PrcPay account (`PRCPAY_ACCOUNT`, default
  * "streamcastpro"); the API key travels as `Authorization: Bearer <key>`. Amounts are
@@ -18,6 +24,16 @@
 
 const base = () => String(process.env.PRCPAY_BASE_URL ?? 'https://api.prcpay.com').trim().replace(/\/+$/, '');
 const key = () => String(process.env.PRCPAY_API_KEY ?? '').trim();
+
+/** An endpoint path, overridable from the environment: `charge` -> `/charge`. */
+const endpointPath = (name, fallback) => {
+  const value = String(process.env[name] ?? '').trim().replace(/\/+$/, '');
+  if (!value) return fallback;
+  return value.startsWith('/') ? value : `/${value}`;
+};
+
+export const chargePath = () => endpointPath('PRCPAY_CHARGE_PATH', '/charge');
+export const transferPath = () => endpointPath('PRCPAY_TRANSFER_PATH', '/transfer');
 
 export const PRCPAY_MERCHANT = () => String(process.env.PRCPAY_ACCOUNT ?? 'streamcastpro').trim();
 
@@ -77,7 +93,7 @@ async function call(path, body) {
 
 /** Debits a listener's PrcPay account (its linked PrcPay card) for one purchase. */
 export const charge = async ({ cents, currency, account, reference, description }) => {
-  const payload = await call('/payments', {
+  const payload = await call(chargePath(), {
     amount: decimalAmount(cents),
     currency: normalizeCurrency(currency),
     account,
@@ -89,7 +105,7 @@ export const charge = async ({ cents, currency, account, reference, description 
 
 /** Sends money to another PrcPay account — an owner's own, the instant a sale lands. */
 export const payout = async ({ cents, currency, account, reference, description }) => {
-  const payload = await call('/payouts', {
+  const payload = await call(transferPath(), {
     amount: decimalAmount(cents),
     currency: normalizeCurrency(currency),
     account,

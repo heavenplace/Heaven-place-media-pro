@@ -26,7 +26,22 @@
     },
     {
       "name": "PRCPAY_API_KEY",
-      "description": "PrcPay merchant API key (from your PrcPay dashboard). Switches on PrcPay — instant pay-ins by PrcPay card and instant payouts to owners' PrcPay accounts. PrcPay publishes no API reference, so confirm the three non-secret values this app assumes and add any that differ here as well: PRCPAY_BASE_URL (default https://api.prcpay.com), PRCPAY_ACCOUNT (default streamcastpro), PRCPAY_WEBHOOK_IPS (comma-separated PrcPay source addresses; without it the settlement webhook refuses every caller).",
+      "description": "PrcPay merchant API key from your PrcPay dashboard; sent as 'Authorization: Bearer <key>'. Switches on PrcPay — instant pay-ins by PrcPay card and instant payouts to owners' PrcPay accounts.",
+      "requiredAtBoot": false
+    },
+    {
+      "name": "PRCPAY_BASE_URL",
+      "description": "The PrcPay API host the server should call, e.g. https://api.prcpay.com or the public URL of your own PrcPay server — it must be reachable from the app's server, not just from your browser. Left unset, the sandbox uses the local stand-in at http://prcpay:3001/api (docker-compose.base44.yml + prcpay-dev/). Endpoint paths are configurable too: PRCPAY_CHARGE_PATH and PRCPAY_TRANSFER_PATH (defaults /charge and /transfer), e.g. /api/charge behind a base that ends in /api.",
+      "requiredAtBoot": false
+    },
+    {
+      "name": "PRCPAY_ACCOUNT",
+      "description": "This platform's own PrcPay account, sent to PrcPay as 'merchant'. Defaults to streamcastpro — set it if your PrcPay merchant account is named differently.",
+      "requiredAtBoot": false
+    },
+    {
+      "name": "PRCPAY_WEBHOOK_IPS",
+      "description": "Comma-separated source addresses PrcPay's settlement notifications come from. Notifications carry no signature, so this allowlist is the whole check — without it POST /api/prcpay/webhook refuses every caller (403).",
       "requiredAtBoot": false
     }
   ]

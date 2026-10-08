@@ -17,6 +17,29 @@ services:
       retries: 20
       start_period: 10s
 
+  # Local stand-in for the PrcPay API (prcpay-dev/), so the instant rail can be
+  # exercised without a real merchant account. The api service talks to it because
+  # .env.base44-defaults sets PRCPAY_BASE_URL=http://prcpay:3001/api; point that
+  # variable at the real PrcPay (a secret, which wins over the defaults file) and
+  # this service is never called.
+  prcpay:
+    image: node:22-alpine
+    restart: on-failure
+    working_dir: /app/prcpay-dev
+    environment:
+      - PORT=3001
+    command: ["node", "server.mjs"]
+    volumes:
+      - .:/app
+    ports:
+      - "3001:3001"
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"fetch('http://127.0.0.1:3001/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 15s
+
   # Express API — runs from the bind-mounted source with node --watch.
   api:
     image: node:22-alpine
@@ -33,6 +56,10 @@ services:
       - SEED_DEMO=1
       - CORS_ORIGIN=https://3000-${BASE44_PUBLIC_HOST_SUFFIX}
       - BASE44_PREVIEW_MODE
+    # A PrcPay running on the machine that hosts this sandbox is reachable as
+    # host.docker.internal:3001 — set PRCPAY_BASE_URL to it.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     command: ["sh", "-ec", "npm install --no-audit --no-fund && exec node --watch server.js"]
     volumes:
       - .:/app

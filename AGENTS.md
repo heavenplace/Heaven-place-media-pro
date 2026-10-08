@@ -14,6 +14,9 @@ docker compose -f docker-compose.base44.yml up -d --build
 - Web (public origin, port 3000): Vite dev server, proxies `/api` and `/uploads` to the API.
 - API (port 8000): Express, `node --watch` on the bind-mounted `api/` source.
 - Database: Postgres 16 in the `db` service. Schema is created on boot by `api/db.js`.
+- PrcPay (port 3001): `prcpay-dev/`, a local stand-in for the payment API so the instant
+  rail can be exercised without a merchant account. `PRCPAY_BASE_URL` points at it by
+  default — set that variable to the real API host to bypass it (see "PrcPay" below).
 
 First boot installs `node_modules` into named volumes (`api_node_modules`,
 `web_node_modules`) — this keeps the repo clean and survives restarts.
@@ -54,8 +57,9 @@ when the server is actually set up for them.
 | `STRIPE_SECRET_KEY` | card checkout for Premium memberships and paid downloads |
 | `STRIPE_WEBHOOK_SECRET` | the Stripe webhook signature — optional |
 | `PRCPAY_API_KEY` | PrcPay — instant pay-ins and instant payouts (see "PrcPay" below) |
-| `PRCPAY_BASE_URL` | the PrcPay API host — defaults to `https://api.prcpay.com`, confirm it |
+| `PRCPAY_BASE_URL` | the PrcPay API host the server calls, path prefix included — the sandbox default is the local stand-in `http://prcpay:3001/api` |
 | `PRCPAY_ACCOUNT` | this platform's own PrcPay account — defaults to `streamcastpro` |
+| `PRCPAY_CHARGE_PATH` / `PRCPAY_TRANSFER_PATH` | the two endpoint paths — default `/charge` and `/transfer` |
 | `PRCPAY_WEBHOOK_IPS` | comma-separated PrcPay source addresses; without it the settlement webhook trusts nobody |
 | `PREMIUM_PRICE_CENTS` | Premium price in cents (default `600`) |
 | `WEB_ORIGIN` | an extra origin allowed as a checkout return url, when not already in `CORS_ORIGIN` |
@@ -145,15 +149,26 @@ key — a placeholder only makes the app start, it does not take money.
   falls back to when no Stripe key is set.
 - **PrcPay is the instant rail beside Stripe.** PrcPay publishes no API reference, so the
   contract the app was built against lives in `api/prcpay.js` and everything that could
-  differ from it is configuration rather than code: `PRCPAY_BASE_URL` (the API host),
-  `PRCPAY_ACCOUNT` (this platform's own PrcPay account — `streamcastpro` — sent as
-  `merchant`), and the key as `Authorization: Bearer`. A charge is
-  `POST /payments { merchant, account, amount, currency, reference, description }` and a
-  transfer is `POST /payouts` in the same shape; amounts are **decimal in the currency's
-  own units, never cents**. Every PrcPay currency is accepted except `PRCP` — PrcPay's own
-  token — which `POST /api/prcpay/checkout` refuses. Confirm the host before going live:
-  until `PRCPAY_BASE_URL` names the real PrcPay, a charge fails with a 502 and nothing is
-  charged.
+  differ from it is configuration rather than code: `PRCPAY_BASE_URL` (the API host,
+  including any path prefix), `PRCPAY_CHARGE_PATH` / `PRCPAY_TRANSFER_PATH` (defaults
+  `/charge` and `/transfer`), `PRCPAY_ACCOUNT` (this platform's own PrcPay account —
+  `streamcastpro` — sent as `merchant`), and the key as `Authorization: Bearer`. A charge
+  is `POST {PRCPAY_BASE_URL}/charge { merchant, account, amount, currency, reference,
+  description }` and a transfer is `POST {PRCPAY_BASE_URL}/transfer` in the same shape;
+  amounts are **decimal in the currency's own units, never cents**. Every PrcPay currency
+  is accepted except `PRCP` — PrcPay's own token — which `POST /api/prcpay/checkout`
+  refuses.
+  - **The sandbox has a PrcPay it can actually reach.** `prcpay-dev/server.mjs` runs as the
+    `prcpay` service on port 3001 and answers both calls — bearer required, `{ id, status:
+    'succeeded' }` back — so the instant rail can be exercised end to end without a
+    merchant account; `.env.base44-defaults` points `PRCPAY_BASE_URL` at it
+    (`http://prcpay:3001/api`). It moves no money and never sees `PRCPAY_API_KEY`. Set
+    `PRCPAY_BASE_URL` as a secret to the real API and the stand-in is never called — the
+    secret is listed after the defaults file, so it always wins. A PrcPay running on the
+    machine that hosts the sandbox is reachable from the api service as
+    `host.docker.internal:3001` (`extra_hosts` in the compose file). Until
+    `PRCPAY_BASE_URL` names a host that answers, a charge fails with a 502 and nothing is
+    charged.
   - **Pay-in settles inside the request — there is no redirect to come back from.**
     `POST /api/prcpay/checkout` (`{ kind: 'premium' | 'download', account, currency }`)
     debits the payer's own PrcPay account (the card on it) and grants the membership or
@@ -354,6 +369,8 @@ curl -s localhost:8000/api/live              # what is on air right now
 curl -s localhost:8000/api/live/1/manifest   # bytes available for a phone broadcast
 curl -s "localhost:8000/api/stations?kind=tv" | head -c 120   # what the TV tab loads
 curl -sI localhost:3000/downloads/streamcast-listener-release.apk | head -3   # APK download
+curl -s localhost:3001/health                 # the local PrcPay stand-in
+docker compose -f docker-compose.base44.yml logs --tail=20 prcpay   # what the app sent it
 ```
 
 The APKs themselves are checked with the SDK tools (no emulator can boot in this sandbox —
