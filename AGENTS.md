@@ -77,12 +77,15 @@ key — a placeholder only makes the app start, it does not take money.
   Audio/video/image only, 500 MB per file. Phone recordings are captured with
   `MediaRecorder` in the browser and uploaded the same way (`FileDrop.jsx`).
 - **The listener player** (`web/src/components/Player.jsx`) is the app's one persistent player:
-  audio/video keeps running as the listener moves between pages, and audio plays behind a bar
-  showing the artwork, the title and station, a scrubber with elapsed/total time and a play/pause
-  button. A live stream has no known length, so it reads "On air / Live" instead of a scrubber.
-  `play({...})` takes an optional `artwork`; pass the station's `artwork_url` (media rows carry it
-  as `station_artwork`) or a podcast's `artwork_url` so the bar shows the real cover — without it
-  the bar falls back to a plain tile.
+  audio and video keep running as the listener moves between pages, and both play behind the same
+  bar — artwork (or the video's own picture), title and station, a scrubber with elapsed/total time,
+  play/pause and close. Video adds mute and fullscreen, and on a phone its picture sits on its own
+  line above the controls. A live stream has no known length, so the bar reads "On air / Live"
+  instead of a scrubber. `play({...})` takes an optional `artwork`; pass the station's `artwork_url`
+  (media rows carry it as `station_artwork`) or a podcast's `artwork_url` so the bar shows the real
+  cover — for a video that value is also its poster, and without it the bar falls back to a plain
+  tile. This is the listener bar only: a phone broadcast watched on a station page uses
+  `LivePlayer.jsx` and its own stage.
 - **The creator dashboard** is `/studio` (`web/src/pages/studio/`) with five tabs:
   Overview, Media, Live windows, Podcasts and Station settings. It reads the owner-scoped
   `GET /api/stations/mine`, `GET /api/media/mine` (includes hidden items) and

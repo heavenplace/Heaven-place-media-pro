@@ -181,7 +181,16 @@ label { display: block; font-size: 12px; color: var(--muted); margin: 0 0 6px; f
   border-radius: 50%; border: 1px solid var(--line); background: var(--bg-soft); color: var(--muted); font-size: 14px;
 }
 .player-close:hover { color: var(--text); background: var(--panel-2); }
-.player-video { width: 300px; max-width: 100%; border-radius: 10px; background: #000; }
+.player-icon {
+  width: 38px; height: 38px; flex: none; display: grid; place-items: center; cursor: pointer;
+  border-radius: 50%; border: 1px solid var(--line); background: var(--bg-soft); color: var(--muted);
+}
+.player-icon:hover { color: var(--text); background: var(--panel-2); }
+.player-stage { flex: none; width: 320px; max-width: 100%; }
+.player-video {
+  width: 100%; max-height: 34vh; display: block; object-fit: contain;
+  border-radius: 12px; background: #000; box-shadow: 0 12px 28px rgba(0, 0, 0, 0.5);
+}
 
 /* ---------- lists & tables ---------- */
 .list { display: flex; flex-direction: column; gap: 10px; }
@@ -236,8 +245,10 @@ tr:hover td { background: rgba(255, 255, 255, 0.02); }
   .brand small { display: none; }
   h1 { font-size: 22px; }
   .hero h1 { font-size: 24px; }
-  .player-video { width: 100%; }
   /* On a phone the artwork stays small enough to leave room for the title. */
   .player-art { width: 46px; height: 46px; }
   .player-toggle { width: 42px; height: 42px; }
+  /* The TV picture takes its own line above the controls instead of a narrow column. */
+  .player-inner { flex-wrap: wrap; }
+  .player-stage { width: 100%; }
 }
