@@ -1,13 +1,14 @@
 import { LiveBadge } from '../../components/Cards.jsx';
 import { formatDuration } from '../../api.js';
 
-const isOnAir = (session) => session.status === 'live' && new Date(session.expires_at) > new Date();
+const isOnAir = (session) => session.status === 'live' && (!session.expires_at || new Date(session.expires_at) > new Date());
 
 export default function Overview({ station, media, live, onOpenTab }) {
   const totalSeconds = media.reduce((sum, item) => sum + (item.duration_seconds || 0), 0);
   const hidden = media.filter((item) => !item.visible).length;
   const gated = media.filter((item) => item.access !== 'free').length;
   const unlocks = media.reduce((sum, item) => sum + (item.unlock_count || 0), 0);
+  const relive = media.filter((item) => item.source === 'live').length;
   const onAir = live.find(isOnAir) ?? null;
   const recent = [...live].slice(0, 4);
 
@@ -21,6 +22,7 @@ export default function Overview({ station, media, live, onOpenTab }) {
       </div>
 
       {hidden > 0 && <p className="tiny muted" style={{ margin: 0 }}>{hidden} item{hidden === 1 ? '' : 's'} hidden from listeners.</p>}
+      {relive > 0 && <p className="tiny muted" style={{ margin: 0 }}>{relive} Relive recording{relive === 1 ? '' : 's'} on the station page.</p>}
 
       <section className="panel stack">
         <div className="between">
@@ -31,7 +33,11 @@ export default function Overview({ station, media, live, onOpenTab }) {
           <div className="between">
             <div>
               <b>{onAir.title}</b>
-              <div className="tiny muted">Ends {new Date(onAir.expires_at).toLocaleString()}</div>
+              <div className="tiny muted">
+                {onAir.permanent || !onAir.expires_at
+                  ? '24/7 — never ends'
+                  : `Ends ${new Date(onAir.expires_at).toLocaleString()}`}
+              </div>
             </div>
             <button className="btn btn-sm" onClick={() => onOpenTab('live')}>Manage live window</button>
           </div>
@@ -55,6 +61,7 @@ export default function Overview({ station, media, live, onOpenTab }) {
                   <b>{session.title}</b>
                   <div className="tiny muted">
                     {new Date(session.started_at).toLocaleString()} · {isOnAir(session) ? 'live' : 'ended'}
+                    {session.recording_url && ' · relive available'}
                   </div>
                 </div>
               </div>

@@ -6,18 +6,20 @@ import Overview from './Overview.jsx';
 import MediaTab from './MediaTab.jsx';
 import LiveTab from './LiveTab.jsx';
 import SettingsTab from './SettingsTab.jsx';
+import PodcastsTab from './PodcastsTab.jsx';
 
 const TABS = [
   ['overview', 'Overview'],
   ['media', 'Media'],
   ['live', 'Live windows'],
+  ['podcasts', 'Podcasts'],
   ['settings', 'Station settings']
 ];
 
 /**
- * Station-owner dashboard: pick one of your stations, then publish media, run
- * live windows, and edit the station's public details. Only stations owned by
- * the signed-in user ever load here (the API scopes every call to the owner).
+ * Creator dashboard: publish media, go live from this phone (with a set window or
+ * 24/7) and publish podcast episodes. Stations are scoped to their owner by the API;
+ * the podcasts tab is its own thing and works even without a station.
  */
 export default function StationDashboard() {
   const [stations, setStations] = useState([]);
@@ -56,18 +58,7 @@ export default function StationDashboard() {
   const notify = (message) => { setError(''); setNotice(message); };
   const fail = (message) => { setNotice(''); setError(message); };
 
-  if (!ready) return <div className="empty">Loading your stations…</div>;
-
-  if (stations.length === 0) {
-    return (
-      <Empty>
-        <p>You do not have a station yet.</p>
-        <p className="tiny muted">
-          The control room assigns stations to their owners — ask them to put one in your name and it will appear here.
-        </p>
-      </Empty>
-    );
-  }
+  if (!ready) return <div className="empty">Loading your dashboard…</div>;
 
   const activeTab = TABS.some(([id]) => id === tab) ? tab : 'overview';
 
@@ -75,47 +66,14 @@ export default function StationDashboard() {
     <div className="stack" style={{ gap: 18 }}>
       <div className="between">
         <div>
-          <h1>Station dashboard</h1>
-          <p className="muted small">Publish media and run live windows for the stations you own.</p>
+          <h1>Creator dashboard</h1>
+          <p className="muted small">Publish media and podcasts, and go live from this phone — for a set window or 24/7.</p>
         </div>
         {station && <Link className="btn btn-sm" to={`/station/${station.id}`}>View public page</Link>}
       </div>
 
       {error && <div className="notice notice-error">{error}</div>}
       {notice && <div className="notice notice-ok">{notice}</div>}
-
-      {stations.length > 1 && (
-        <div className="row">
-          {stations.map((item) => (
-            <button
-              key={item.id}
-              className={`btn btn-sm${item.id === stationId ? ' btn-primary' : ''}`}
-              onClick={() => setStationId(item.id)}
-            >
-              {item.name}{item.is_live ? ' · Live' : ''}
-            </button>
-          ))}
-        </div>
-      )}
-
-      {station && (
-        <div className="panel-2 row" style={{ gap: 14, justifyContent: 'space-between' }}>
-          <div className="row" style={{ gap: 12 }}>
-            {station.artwork_url && (
-              <img src={station.artwork_url} alt="" width="46" height="46" style={{ borderRadius: 10, objectFit: 'cover' }} />
-            )}
-            <div>
-              <b>{station.name}</b>
-              <div className="tiny muted">
-                {station.kind === 'tv' ? 'TV' : 'Radio'} · {station.status} · {stationMedia.length} items
-              </div>
-            </div>
-          </div>
-          {station.is_live
-            ? <span className="badge badge-live"><span className="badge-pulse" /> Live</span>
-            : <span className="badge">Off air</span>}
-        </div>
-      )}
 
       <div className="tabs">
         {TABS.map(([id, label]) => (
@@ -125,17 +83,64 @@ export default function StationDashboard() {
         ))}
       </div>
 
-      {station && activeTab === 'overview' && (
-        <Overview station={station} media={stationMedia} live={stationLive} onOpenTab={setTab} />
-      )}
-      {station && activeTab === 'media' && (
-        <MediaTab station={station} media={stationMedia} reload={load} notify={notify} fail={fail} />
-      )}
-      {station && activeTab === 'live' && (
-        <LiveTab station={station} media={stationMedia} live={stationLive} reload={load} notify={notify} fail={fail} />
-      )}
-      {station && activeTab === 'settings' && (
-        <SettingsTab station={station} reload={load} notify={notify} fail={fail} />
+      {activeTab === 'podcasts' ? (
+        <PodcastsTab notify={notify} fail={fail} />
+      ) : stations.length === 0 ? (
+        <Empty>
+          <p>You do not have a station yet.</p>
+          <p className="tiny muted">
+            The control room assigns stations to their owners — ask them to put one in your name and it will appear here.
+            You can publish podcast episodes from the Podcasts tab in the meantime.
+          </p>
+        </Empty>
+      ) : (
+        <>
+          {stations.length > 1 && (
+            <div className="row">
+              {stations.map((item) => (
+                <button
+                  key={item.id}
+                  className={`btn btn-sm${item.id === stationId ? ' btn-primary' : ''}`}
+                  onClick={() => setStationId(item.id)}
+                >
+                  {item.name}{item.is_live ? ' · Live' : ''}
+                </button>
+              ))}
+            </div>
+          )}
+
+          {station && (
+            <div className="panel-2 row" style={{ gap: 14, justifyContent: 'space-between' }}>
+              <div className="row" style={{ gap: 12 }}>
+                {station.artwork_url && (
+                  <img src={station.artwork_url} alt="" width="46" height="46" style={{ borderRadius: 10, objectFit: 'cover' }} />
+                )}
+                <div>
+                  <b>{station.name}</b>
+                  <div className="tiny muted">
+                    {station.kind === 'tv' ? 'TV' : 'Radio'} · {station.status} · {stationMedia.length} items
+                  </div>
+                </div>
+              </div>
+              {station.is_live
+                ? <span className="badge badge-live"><span className="badge-pulse" /> Live</span>
+                : <span className="badge">Off air</span>}
+            </div>
+          )}
+
+          {station && activeTab === 'overview' && (
+            <Overview station={station} media={stationMedia} live={stationLive} onOpenTab={setTab} />
+          )}
+          {station && activeTab === 'media' && (
+            <MediaTab station={station} media={stationMedia} reload={load} notify={notify} fail={fail} />
+          )}
+          {station && activeTab === 'live' && (
+            <LiveTab station={station} media={stationMedia} live={stationLive} reload={load} notify={notify} fail={fail} />
+          )}
+          {station && activeTab === 'settings' && (
+            <SettingsTab station={station} reload={load} notify={notify} fail={fail} />
+          )}
+        </>
       )}
     </div>
   );

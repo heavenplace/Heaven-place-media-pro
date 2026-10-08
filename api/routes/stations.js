@@ -5,7 +5,7 @@ import { canManageStation, logActivity } from '../guards.js';
 
 const router = express.Router();
 
-const LIVE_JOIN = `EXISTS (SELECT 1 FROM live_sessions l WHERE l.station_id = s.id AND l.status = 'live' AND l.expires_at > now()) AS is_live`;
+const LIVE_JOIN = `EXISTS (SELECT 1 FROM live_sessions l WHERE l.station_id = s.id AND l.status = 'live' AND (l.expires_at IS NULL OR l.expires_at > now())) AS is_live`;
 
 function filters(query) {
   const where = [];
@@ -62,7 +62,7 @@ router.get('/:id', async (req, res) => {
 
   const [media, live] = await Promise.all([
     q('SELECT * FROM media WHERE station_id = $1 AND visible ORDER BY created_at DESC', [station.id]),
-    q("SELECT * FROM live_sessions WHERE station_id = $1 AND status = 'live' AND expires_at > now() ORDER BY started_at DESC", [station.id])
+    q("SELECT * FROM live_sessions WHERE station_id = $1 AND status = 'live' AND (expires_at IS NULL OR expires_at > now()) ORDER BY started_at DESC", [station.id])
   ]);
   res.json({ station, media: media.rows, live: live.rows[0] ?? null });
 });

@@ -76,16 +76,39 @@ key — a placeholder only makes the app start, it does not take money.
 - **Uploads** go to the `uploads` volume and are served from `/uploads/...`.
   Audio/video/image only, 500 MB per file. Phone recordings are captured with
   `MediaRecorder` in the browser and uploaded the same way (`FileDrop.jsx`).
-- **Station owners** get a dashboard at `/studio` (`web/src/pages/studio/`): a
-  per-station overview, media upload and management, live-window control (start,
-  extend +1 hour, end now) and station details. It reads the owner-scoped
+- **The creator dashboard** is `/studio` (`web/src/pages/studio/`) with five tabs:
+  Overview, Media, Live windows, Podcasts and Station settings. It reads the owner-scoped
   `GET /api/stations/mine`, `GET /api/media/mine` (includes hidden items) and
-  `GET /api/live/mine` (active first); every write reuses the normal routes,
-  which scope themselves to the owner through `canManageStation`.
-- **Live** is a scheduled window over an existing item (`live_sessions.expires_at`),
-  not a real-time broadcast relay. True camera/audio broadcast to many listeners
-  needs a streaming service (e.g. an RTMP/HLS provider) — the live control screens
-  are ready to point at one.
+  `GET /api/live/mine` (active first); every write reuses the normal routes, which scope
+  themselves to the owner through `canManageStation`.
+- **Podcasts** are published from that dashboard's Podcasts tab:
+  `GET /api/podcasts/mine` (the account's own shows), `POST /api/podcasts` (any signed-in
+  creator starts their own show; only an admin may assign one to another account) and
+  `POST /api/podcasts/:id/episodes` (owner or admin). Episodes are recorded on the phone
+  or uploaded through the same `FileDrop.jsx` as media.
+- **Live** has two shapes, both rows in `live_sessions`:
+  - a *window* over an item that was already published — a set duration (1/4/12/24 hours)
+    or `permanent = true` for 24/7. An open-ended window stores no `expires_at`, so every
+    "on air" check is `status = 'live' AND (expires_at IS NULL OR expires_at > now())`.
+  - a *phone broadcast*, where the owner's device is the source. `LiveBroadcaster.jsx`
+    captures the camera and microphone, paints the video onto a canvas (so switching
+    between the front and back camera keeps one continuous stream) and records it with
+    `MediaRecorder` in two-second slices. Each slice goes to `POST /api/live/:id/chunk`
+    (raw body, owner only) and is appended to `uploads/live/<session id>.<webm|mp4>`; the
+    session's `mime`, `chunk_count` and `recording_url` follow along.
+  - A listener follows that growing file: `GET /api/live/:id/manifest` reports the bytes
+    that exist, and `LivePlayer.jsx` appends each new byte range (a `Range` request on
+    `/uploads/live/...`, which express.static serves) to a `MediaSource` buffer, staying a
+    couple of seconds behind the live edge. A browser without MediaSource falls back to
+    playing the file.
+  - `POST /api/live/:id/end` archives what was recorded as a **Relive** item: a normal
+    `media` row with `source = 'live'`, shown in the station page's Relive section and
+    playable on demand.
+  - Limits worth knowing: capture only runs while the page is open and in the foreground
+    (a backgrounded tab stops drawing the canvas, which freezes the stream), quality is
+    bounded by the phone's encoder and its connection, viewers need a browser with
+    MediaSource for the live edge, and a station has one broadcast at a time — opening a
+    new window ends the previous one.
 - **Payments** run through Stripe Checkout once `STRIPE_SECRET_KEY` is set.
   `POST /api/payments/checkout` opens a hosted session for a Premium membership
   (monthly) or one paid download; access is granted by `POST /api/payments/confirm`
@@ -174,6 +197,8 @@ docker compose -f docker-compose.mobile.yml run --rm android
 curl -s localhost:3000/ | head -5            # web serves the app shell
 curl -s localhost:8000/health                # {"ok":true,"service":"api"}
 curl -s localhost:8000/api/config            # which integrations are switched on
+curl -s localhost:8000/api/live              # what is on air right now
+curl -s localhost:8000/api/live/1/manifest   # bytes available for a phone broadcast
 ```
 
 Test-harness pitfalls — these show up in the logs as alarming-looking errors but are
@@ -184,4 +209,8 @@ the check script's fault, not the app's:
   line (`| head -n1`) — otherwise the tag leaks into the next SQL statement (syntax
   error in the `db` log) and into JSON bodies (a body-parser 400 in the `api` log with
   the tag quoted back at you).
-- `activity` has no `title` column; it is `type` + `detail`.
+- `activity` has no `title` column; it is `type` + `detail`, and `live_sessions` has
+  `started_at`, not `created_at`.
+- A `psql` capture that leaks its command tag into a later statement shows up as a
+  syntax error in the `db` log; a leaked tag inside a JSON body shows up as a
+  body-parser 400 in the `api` log. Both are the script, not the app.

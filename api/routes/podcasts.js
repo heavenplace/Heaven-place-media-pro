@@ -14,6 +14,16 @@ router.get('/', async (_req, res) => {
   res.json({ podcasts: rows });
 });
 
+// The shows this account owns — what the studio's podcasts tab lists.
+router.get('/mine', auth(), async (req, res) => {
+  const { rows } = await q(
+    `SELECT p.*, (SELECT count(*)::int FROM episodes e WHERE e.podcast_id = p.id) AS episode_count
+     FROM podcasts p WHERE p.owner_id = $1 ORDER BY p.created_at DESC`,
+    [req.user.id]
+  );
+  res.json({ podcasts: rows });
+});
+
 router.get('/:id', async (req, res) => {
   const { rows } = await q(
     `SELECT p.*, u.name AS owner_name FROM podcasts p LEFT JOIN users u ON u.id = p.owner_id WHERE p.id = $1`,
@@ -24,11 +34,15 @@ router.get('/:id', async (req, res) => {
   res.json({ podcast: rows[0], episodes: episodes.rows });
 });
 
-// Shows are created from the control room, which may hand one to an owner; that owner
-// (or an admin) then publishes its episodes. Listeners cannot create shows at all.
-router.post('/', auth({ admin: true }), async (req, res) => {
+// Anyone signed in can start their own show from the studio's podcasts tab; the control
+// room can also start one and hand it to an owner. That owner (or an admin) then
+// publishes its episodes.
+router.post('/', auth(), async (req, res) => {
   const { title, description = '', artwork_url = '', owner_id } = req.body ?? {};
   if (!title) return res.status(400).json({ error: 'A podcast title is required' });
+  if (owner_id !== undefined && req.user.role !== 'admin') {
+    return res.status(403).json({ error: 'Only the control room can assign a show to another account' });
+  }
   const owner = owner_id ? Number(owner_id) : req.user.id;
   if (owner !== req.user.id) {
     const { rows: owners } = await q('SELECT id FROM users WHERE id = $1', [owner]);

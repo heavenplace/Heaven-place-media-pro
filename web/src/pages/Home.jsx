@@ -78,11 +78,17 @@ export default function Home() {
                 <div className="small muted">{session.title}</div>
                 <div className="row tiny muted">
                   <span className="badge">{session.media_type === 'video' ? 'Video' : 'Audio'}</span>
-                  <span>until {new Date(session.expires_at).toLocaleTimeString()}</span>
+                  <span>{session.permanent || !session.expires_at ? 'on air 24/7' : `until ${new Date(session.expires_at).toLocaleTimeString()}`}</span>
                 </div>
                 <div className="card-actions">
-                  <button className="btn btn-sm btn-primary" onClick={() => playLive(session)}>Tune in</button>
-                  <Link className="btn btn-sm" to={`/station/${session.station_id}`}>Station</Link>
+                  {session.mime ? (
+                    <Link className="btn btn-sm btn-primary" to={`/station/${session.station_id}`}>Watch live</Link>
+                  ) : (
+                    <>
+                      <button className="btn btn-sm btn-primary" onClick={() => playLive(session)}>Tune in</button>
+                      <Link className="btn btn-sm" to={`/station/${session.station_id}`}>Station</Link>
+                    </>
+                  )}
                 </div>
               </article>
             ))}

@@ -74,8 +74,12 @@ CREATE TABLE IF NOT EXISTS live_sessions (
   title text NOT NULL,
   kind text NOT NULL DEFAULT 'audio',
   status text NOT NULL DEFAULT 'live',
+  permanent boolean NOT NULL DEFAULT false,
+  mime text,
+  recording_url text,
+  chunk_count integer NOT NULL DEFAULT 0,
   started_at timestamptz NOT NULL DEFAULT now(),
-  expires_at timestamptz NOT NULL,
+  expires_at timestamptz,
   ended_at timestamptz,
   created_by integer REFERENCES users(id) ON DELETE SET NULL
 );
@@ -125,8 +129,19 @@ CREATE TABLE IF NOT EXISTS subscriptions (
 );
 `;
 
+// Columns added after the first release. ADD COLUMN IF NOT EXISTS keeps this idempotent,
+// and a 24/7 window has no expires_at at all, so that column must allow NULL.
+const MIGRATIONS = `
+ALTER TABLE live_sessions ADD COLUMN IF NOT EXISTS permanent boolean NOT NULL DEFAULT false;
+ALTER TABLE live_sessions ADD COLUMN IF NOT EXISTS mime text;
+ALTER TABLE live_sessions ADD COLUMN IF NOT EXISTS recording_url text;
+ALTER TABLE live_sessions ADD COLUMN IF NOT EXISTS chunk_count integer NOT NULL DEFAULT 0;
+ALTER TABLE live_sessions ALTER COLUMN expires_at DROP NOT NULL;
+`;
+
 export async function ensureSchema() {
   await q(SCHEMA);
+  await q(MIGRATIONS);
 }
 
 export async function ensureAdmin() {

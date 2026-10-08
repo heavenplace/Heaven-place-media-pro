@@ -4,6 +4,15 @@ import { api } from '../api.js';
 import { useAuth } from '../AuthContext.jsx';
 import { usePlayer } from '../components/Player.jsx';
 import { Empty, LiveBadge, MediaRow } from '../components/Cards.jsx';
+import LivePlayer from '../components/LivePlayer.jsx';
+
+const WINDOWS = [
+  ['1', '1 hour'],
+  ['4', '4 hours'],
+  ['12', '12 hours'],
+  ['24', '24 hours'],
+  ['permanent', '24/7 — never ends']
+];
 
 export default function StationDetail() {
   const { id } = useParams();
@@ -13,7 +22,7 @@ export default function StationDetail() {
   const [error, setError] = useState('');
   const [editing, setEditing] = useState(false);
   const [form, setForm] = useState({ name: '', description: '', artwork_url: '' });
-  const [liveForm, setLiveForm] = useState({ media_id: '', title: '', hours: 1 });
+  const [liveForm, setLiveForm] = useState({ media_id: '', title: '', duration: '1' });
   const [busy, setBusy] = useState(false);
   const [followed, setFollowed] = useState(false);
 
@@ -59,6 +68,10 @@ export default function StationDetail() {
 
   const { station, media, live } = data;
   const canManage = user && (user.role === 'admin' || user.id === station.owner_id);
+  const relive = media.filter((item) => item.source === 'live');
+  const onDemand = media.filter((item) => item.source !== 'live');
+  const relay = Boolean(live?.mime);
+  const forever = Boolean(live?.permanent) || (live ? !live.expires_at : false);
 
   const saveStation = async (event) => {
     event.preventDefault();
@@ -76,6 +89,7 @@ export default function StationDetail() {
 
   const goLive = async (event) => {
     event.preventDefault();
+    const permanent = liveForm.duration === 'permanent';
     setBusy(true);
     setError('');
     try {
@@ -86,10 +100,10 @@ export default function StationDetail() {
           media_id: liveForm.media_id ? Number(liveForm.media_id) : undefined,
           title: liveForm.title,
           kind: station.kind === 'tv' ? 'video' : 'audio',
-          hours: Number(liveForm.hours)
+          ...(permanent ? { permanent: true } : { hours: Number(liveForm.duration) })
         }
       });
-      setLiveForm({ media_id: '', title: '', hours: 1 });
+      setLiveForm({ media_id: '', title: '', duration: '1' });
       load();
     } catch (err) {
       setError(err.message);
@@ -122,6 +136,9 @@ export default function StationDetail() {
     }
   };
 
+  const playMedia = (item, subtitle = station.name) =>
+    play({ id: item.id, title: item.title, subtitle, type: item.type, url: item.url, artwork: station.artwork_url });
+
   return (
     <div className="stack" style={{ gap: 20 }}>
       <section className="hero">
@@ -144,20 +161,8 @@ export default function StationDetail() {
           </div>
           <div className="stack" style={{ gap: 8 }}>
             {live ? <LiveBadge /> : <span className="badge">Off air</span>}
-            {live && live.media_url && (
-              <button
-                className="btn btn-primary"
-                onClick={() =>
-                  play({
-                    id: live.media_id,
-                    title: live.title,
-                    subtitle: `${station.name} · on air`,
-                    type: live.media_type || live.kind,
-                    url: live.media_url,
-                    live: true
-                  })
-                }
-              >
+            {live && !relay && live.media_url && (
+              <button className="btn btn-primary" onClick={() => playMedia({ ...live, id: live.media_id, title: live.title, type: live.media_type || live.kind, url: live.media_url }, `${station.name} · on air`)}>
                 Tune in
               </button>
             )}
@@ -172,6 +177,21 @@ export default function StationDetail() {
       </section>
 
       {error && <div className="notice notice-error">{error}</div>}
+
+      {live && relay && (
+        <section className="panel stack" style={{ gap: 10 }}>
+          <div className="between">
+            <div>
+              <h2 style={{ margin: 0 }}>{live.title}</h2>
+              <p className="tiny muted" style={{ margin: 0 }}>
+                Broadcasting live from the station's phone · {forever ? 'on air 24/7' : `window ends ${new Date(live.expires_at).toLocaleTimeString()}`}
+              </p>
+            </div>
+            <LiveBadge />
+          </div>
+          <LivePlayer session={live} onEnded={load} />
+        </section>
+      )}
 
       {canManage && editing && (
         <form className="panel stack" onSubmit={saveStation}>
@@ -199,7 +219,7 @@ export default function StationDetail() {
         <form className="panel stack" onSubmit={goLive}>
           <div className="between">
             <h3>Put something on air</h3>
-            <span className="tiny muted">Any upload can be re-aired for 1–24 hours</span>
+            <span className="tiny muted">Air an upload for 1–24 hours, or run it 24/7</span>
           </div>
           <div className="row">
             <div className="grow">
@@ -219,27 +239,45 @@ export default function StationDetail() {
                 placeholder="e.g. Morning Drive"
               />
             </div>
-            <div style={{ width: 120 }}>
-              <label>Hours</label>
-              <input
-                type="number"
-                min="1"
-                max="24"
-                value={liveForm.hours}
-                onChange={(event) => setLiveForm({ ...liveForm, hours: event.target.value })}
-              />
+            <div style={{ minWidth: 185 }}>
+              <label>How long</label>
+              <select value={liveForm.duration} onChange={(event) => setLiveForm({ ...liveForm, duration: event.target.value })}>
+                {WINDOWS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+              </select>
             </div>
           </div>
           <div className="row">
             <button className="btn btn-primary" type="submit" disabled={busy}>Go live</button>
             {live && (
               <>
-                <button className="btn" type="button" onClick={extendLive} disabled={busy}>Extend 1 hour</button>
+                {!forever && <button className="btn" type="button" onClick={extendLive} disabled={busy}>Extend 1 hour</button>}
                 <button className="btn btn-danger" type="button" onClick={endLive} disabled={busy}>End early</button>
               </>
             )}
           </div>
+          <p className="tiny muted" style={{ margin: 0 }}>
+            Going live from a phone camera is in the studio — open <Link to="/studio">your dashboard</Link>, Live windows tab.
+          </p>
         </form>
+      )}
+
+      {relive.length > 0 && (
+        <section>
+          <div className="between">
+            <h2>Relive</h2>
+            <span className="tiny muted">Recorded live broadcasts, playable any time</span>
+          </div>
+          <div className="grid grid-media">
+            {relive.map((item) => (
+              <MediaRow
+                key={item.id}
+                item={{ ...item, station_name: station.name }}
+                onPlay={(m) => playMedia(m, `${station.name} · relive`)}
+                onChanged={load}
+              />
+            ))}
+          </div>
+        </section>
       )}
 
       <section>
@@ -247,15 +285,15 @@ export default function StationDetail() {
           <h2>On-demand</h2>
           <Link className="small muted" to="/studio">Publish something new</Link>
         </div>
-        {media.length === 0 ? (
+        {onDemand.length === 0 ? (
           <Empty>No shows published on this station yet.</Empty>
         ) : (
           <div className="grid grid-media">
-            {media.map((item) => (
+            {onDemand.map((item) => (
               <MediaRow
                 key={item.id}
                 item={{ ...item, station_name: station.name }}
-                onPlay={(m) => play({ id: m.id, title: m.title, subtitle: station.name, type: m.type, url: m.url, artwork: station.artwork_url })}
+                onPlay={(m) => playMedia(m)}
                 onChanged={load}
               />
             ))}

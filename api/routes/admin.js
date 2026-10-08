@@ -2,6 +2,7 @@ import express from 'express';
 import { q } from '../db.js';
 import { auth } from '../auth.js';
 import { logActivity } from '../guards.js';
+import { saveRecording } from './live.js';
 
 const router = express.Router();
 router.use(auth({ admin: true }));
@@ -15,7 +16,7 @@ router.get('/overview', async (_req, res) => {
       (SELECT count(*)::int FROM users) AS users,
       (SELECT count(*)::int FROM media) AS media,
       (SELECT count(*)::int FROM podcasts) AS podcasts,
-      (SELECT count(*)::int FROM live_sessions WHERE status = 'live' AND expires_at > now()) AS live_now,
+      (SELECT count(*)::int FROM live_sessions WHERE status = 'live' AND (expires_at IS NULL OR expires_at > now())) AS live_now,
       (SELECT count(DISTINCT user_id)::int FROM activity WHERE type = 'listen' AND created_at > now() - interval '5 minutes') AS active_listeners,
       (SELECT count(*)::int FROM access_requests WHERE status = 'pending') AS pending_requests,
       (SELECT count(*)::int FROM entitlements) AS unlocks
@@ -28,7 +29,7 @@ router.get('/stations-summary', async (_req, res) => {
   const { rows } = await q(`
     SELECT s.id, s.name, s.kind, s.status, s.verified,
       count(l.id)::int AS sessions,
-      coalesce(round(sum(EXTRACT(EPOCH FROM (coalesce(l.ended_at, least(l.expires_at, now())) - l.started_at)) / 60)), 0)::int AS minutes_aired,
+      coalesce(round(sum(EXTRACT(EPOCH FROM (coalesce(l.ended_at, l.expires_at, now()) - l.started_at)) / 60)), 0)::int AS minutes_aired,
       (SELECT count(DISTINCT a.user_id)::int FROM activity a
         WHERE a.station_id = s.id AND a.type = 'listen' AND a.created_at > now() - interval '5 minutes') AS active_listeners
     FROM stations s LEFT JOIN live_sessions l ON l.station_id = s.id
@@ -183,7 +184,7 @@ router.get('/live', async (_req, res) => {
   const { rows } = await q(
     `SELECT l.*, s.name AS station_name, s.kind AS station_kind
      FROM live_sessions l JOIN stations s ON s.id = l.station_id
-     ORDER BY (l.status = 'live' AND l.expires_at > now()) DESC, l.started_at DESC LIMIT 100`
+     ORDER BY (l.status = 'live' AND (l.expires_at IS NULL OR l.expires_at > now())) DESC, l.started_at DESC LIMIT 100`
   );
   res.json({ live: rows });
 });
@@ -191,8 +192,9 @@ router.get('/live', async (_req, res) => {
 router.post('/live/:id/end', async (req, res) => {
   const { rows } = await q("UPDATE live_sessions SET status = 'ended', ended_at = now() WHERE id = $1 RETURNING *", [req.params.id]);
   if (!rows.length) return res.status(404).json({ error: 'Live session not found' });
+  const relive = await saveRecording(rows[0]);
   await logActivity(req.user.id, 'live_end', `${req.user.name} took ${rows[0].title} off air`, rows[0].station_id);
-  res.json({ session: rows[0] });
+  res.json({ session: rows[0], relive });
 });
 
 export default router;

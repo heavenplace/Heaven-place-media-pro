@@ -189,6 +189,12 @@ tr:hover td { background: rgba(255, 255, 255, 0.02); }
 .spinner { width: 16px; height: 16px; border: 2px solid var(--line); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.8s linear infinite; display: inline-block; }
 @keyframes spin { to { transform: rotate(360deg); } }
 
+/* Phone broadcasting: the camera preview (studio) and the live stage (listener). */
+.live-stage { position: relative; background: #05060a; border: 1px solid var(--line); border-radius: 14px; overflow: hidden; min-height: 240px; display: grid; place-items: center; }
+.live-video { width: 100%; max-height: 60vh; background: #000; display: block; }
+.live-audio { width: min(520px, 100%); margin: 20px; }
+.live-placeholder { position: absolute; inset: 0; display: grid; place-content: center; justify-items: center; gap: 10px; text-align: center; padding: 20px; background: rgba(5, 6, 10, 0.75); color: var(--muted); }
+
 @media (max-width: 720px) {
   /* The seven control-room tabs cannot fit a phone in one row — wrap them so that
      none of them hide behind a sideways swipe. */

@@ -1,10 +1,22 @@
 import { useState } from 'react';
 import { api } from '../../api.js';
 import { Empty, LiveBadge } from '../../components/Cards.jsx';
+import LiveBroadcaster from '../../components/LiveBroadcaster.jsx';
 
-const isOnAir = (session) => session.status === 'live' && new Date(session.expires_at) > new Date();
+const WINDOWS = [
+  ['1', '1 hour'],
+  ['4', '4 hours'],
+  ['12', '12 hours'],
+  ['24', '24 hours'],
+  ['permanent', '24/7 — never ends']
+];
+
+const isForever = (session) => Boolean(session.permanent) || !session.expires_at;
+
+const isOnAir = (session) => session.status === 'live' && (!session.expires_at || new Date(session.expires_at) > new Date());
 
 const remaining = (session) => {
+  if (isForever(session)) return 'never ends';
   const ms = new Date(session.expires_at).getTime() - Date.now();
   if (ms <= 0) return 'ended';
   const minutes = Math.floor(ms / 60000);
@@ -13,11 +25,12 @@ const remaining = (session) => {
 };
 
 export default function LiveTab({ station, media, live, reload, notify, fail }) {
-  const [form, setForm] = useState({ media_id: '', title: '', hours: 1 });
+  const [form, setForm] = useState({ media_id: '', title: '', duration: '1' });
   const [busy, setBusy] = useState(false);
 
   const goLive = async (event) => {
     event.preventDefault();
+    const forever = form.duration === 'permanent';
     setBusy(true);
     fail('');
     try {
@@ -27,11 +40,12 @@ export default function LiveTab({ station, media, live, reload, notify, fail }) 
           station_id: station.id,
           media_id: form.media_id ? Number(form.media_id) : undefined,
           title: form.title,
-          hours: Number(form.hours)
+          kind: station.kind === 'tv' ? 'video' : 'audio',
+          ...(forever ? { permanent: true } : { hours: Number(form.duration) })
         }
       });
-      setForm({ media_id: '', title: '', hours: 1 });
-      notify('On air — every listener sees it immediately.');
+      setForm({ media_id: '', title: '', duration: '1' });
+      notify(forever ? 'On air 24/7 — every listener sees it immediately.' : 'On air — every listener sees it immediately.');
       reload();
     } catch (err) {
       fail(err.message);
@@ -43,7 +57,7 @@ export default function LiveTab({ station, media, live, reload, notify, fail }) 
   const end = async (session) => {
     try {
       await api(`/live/${session.id}/end`, { method: 'POST' });
-      notify('Live window ended.');
+      notify(session.mime ? 'Off air — the broadcast is saved as a Relive item.' : 'Live window ended.');
       reload();
     } catch (err) {
       fail(err.message);
@@ -65,10 +79,12 @@ export default function LiveTab({ station, media, live, reload, notify, fail }) 
 
   return (
     <div className="stack" style={{ gap: 18 }}>
+      <LiveBroadcaster station={station} onStarted={reload} onEnded={reload} notify={notify} fail={fail} />
+
       <form className="panel stack" onSubmit={goLive}>
-        <h3>Start a live window</h3>
+        <h3>Put something you published on air</h3>
         <p className="muted small" style={{ margin: 0 }}>
-          Pick one of your published items and put {station.name} on air for a set window (up to 24 hours).
+          Pick one of your published items and air it on {station.name} for a set window — or 24/7.
         </p>
 
         <div className="row">
@@ -89,14 +105,16 @@ export default function LiveTab({ station, media, live, reload, notify, fail }) 
               placeholder="Optional if you picked an item"
             />
           </div>
-          <div style={{ width: 110 }}>
-            <label>Hours</label>
-            <input type="number" min="1" max="24" value={form.hours} onChange={(event) => setForm({ ...form, hours: event.target.value })} />
+          <div style={{ minWidth: 190 }}>
+            <label>How long</label>
+            <select value={form.duration} onChange={(event) => setForm({ ...form, duration: event.target.value })}>
+              {WINDOWS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+            </select>
           </div>
         </div>
 
         <button className="btn btn-primary" type="submit" disabled={busy}>
-          {busy ? <span className="spinner" /> : 'Go live'}
+          {busy ? <span className="spinner" /> : form.duration === 'permanent' ? 'Go live 24/7' : 'Go live'}
         </button>
       </form>
 
@@ -111,12 +129,13 @@ export default function LiveTab({ station, media, live, reload, notify, fail }) 
                 <div className="row" style={{ gap: 8 }}>
                   <b>{session.title}</b>
                   <LiveBadge />
+                  {session.mime && <span className="badge badge-accent">{session.mime.startsWith('audio') ? 'Phone · audio' : 'Phone · video'}</span>}
                 </div>
                 <div className="tiny muted">
-                  Started {new Date(session.started_at).toLocaleString()} · ends {new Date(session.expires_at).toLocaleTimeString()} · {remaining(session)}
+                  Started {new Date(session.started_at).toLocaleString()} · {isForever(session) ? '24/7 — never ends' : `ends ${new Date(session.expires_at).toLocaleTimeString()}`} · {remaining(session)}
                 </div>
-                <div className="row" style={{ gap: 8 }}>
-                  <button className="btn btn-sm" onClick={() => extend(session)}>Extend +1 hour</button>
+                <div className="row">
+                  <button className="btn btn-sm" onClick={() => extend(session)} disabled={isForever(session)}>Extend +1 hour</button>
                   <button className="btn btn-sm btn-danger" onClick={() => end(session)}>End now</button>
                 </div>
               </div>
@@ -135,7 +154,10 @@ export default function LiveTab({ station, media, live, reload, notify, fail }) 
               <div key={session.id} className="row-item">
                 <div>
                   <b>{session.title}</b>
-                  <div className="tiny muted">{new Date(session.started_at).toLocaleString()} · {session.status}</div>
+                  <div className="tiny muted">
+                    {new Date(session.started_at).toLocaleString()} · {session.status}
+                    {session.recording_url && ' · Relive available on the station page'}
+                  </div>
                 </div>
                 <span className="badge">{session.status}</span>
               </div>

@@ -88,7 +88,7 @@ export default function Live() {
         ) : (
           <div className="list">
             {live.map((session) => {
-              const onAir = session.status === 'live' && new Date(session.expires_at) > new Date();
+              const onAir = session.status === 'live' && (!session.expires_at || new Date(session.expires_at) > new Date());
               return (
                 <div key={session.id} className="row-item">
                   <div>
@@ -97,7 +97,7 @@ export default function Live() {
                       {onAir ? <LiveBadge /> : <span className="badge">{session.status}</span>}
                     </div>
                     <div className="tiny muted">
-                      {session.station_name} · started {new Date(session.started_at).toLocaleString()} · ends {new Date(session.expires_at).toLocaleTimeString()}
+                      {session.station_name} · started {new Date(session.started_at).toLocaleString()} · {session.permanent || !session.expires_at ? '24/7 — never ends' : `ends ${new Date(session.expires_at).toLocaleTimeString()}`}
                     </div>
                   </div>
                   {onAir && (

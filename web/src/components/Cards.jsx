@@ -62,6 +62,7 @@ export function MediaRow({ item, onPlay, onChanged }) {
           {item.station_name && <span>{item.station_name} · </span>}
           {formatDuration(item.duration_seconds)} · {timeAgo(item.created_at)}
           {item.source === 'phone' && ' · recorded on phone'}
+          {item.source === 'live' && ' · Relive recording'}
         </div>
         <div className="card-actions">
           <button className="btn btn-sm btn-primary" onClick={() => onPlay(item)}>Play</button>
