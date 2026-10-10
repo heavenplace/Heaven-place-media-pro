@@ -484,6 +484,13 @@ the check script's fault, not the app's:
   `docker compose -f docker-compose.base44.yml exec -T db psql -U streamcast -d streamcast ...`.
 - `activity` has no `title` column; it is `type` + `detail`, and `live_sessions` has
   `started_at`, not `created_at`.
+- `users` has no `user_id` column — its key is `id`, and `user_id` is the foreign key
+  pointing at it on the child tables (`activity`, `favorites`, `entitlements`,
+  `payout_accounts`, `payouts`, …). A `SELECT id, user_id, … FROM users` shows as
+  `ERROR: column "user_id" does not exist` in the `db` log; select `id` instead.
+- `pg_stat_user_tables` names its oid column `relid`, not `oid`, so
+  `pg_stat_get_last_analyze_time(oid)` shows as `ERROR: column "oid" does not exist` —
+  pass `relid`.
 - A `psql` capture that leaks its command tag into a later statement shows up as a
   syntax error in the `db` log; a leaked tag inside a JSON body shows up as a
   body-parser 400 in the `api` log. Both are the script, not the app.
