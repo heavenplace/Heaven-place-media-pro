@@ -266,6 +266,13 @@ ALTER TABLE payouts ADD COLUMN IF NOT EXISTS provider text;
 ALTER TABLE payouts ADD COLUMN IF NOT EXISTS reference text;
 ALTER TABLE earnings ADD COLUMN IF NOT EXISTS payment_ref text;
 CREATE UNIQUE INDEX IF NOT EXISTS earnings_payment_ref_idx ON earnings (payment_ref) WHERE payment_ref IS NOT NULL;
+-- Accounts created with Google start with an unguessable hash and no usable password, so
+-- the app cannot tell "no password yet" from "a password this user knows" by the hash
+-- alone. password_set is that flag: register/ensureAdmin set it true, the Google sign-up
+-- leaves it false, and POST /api/auth/password only asks for the current password when it
+-- is true. Rows that predate the column default to false, which lets a Google account set
+-- its first password without one (the request is already authenticated as that account).
+ALTER TABLE users ADD COLUMN IF NOT EXISTS password_set boolean NOT NULL DEFAULT false;
 `;
 
 export async function ensureSchema() {
@@ -284,7 +291,7 @@ export async function ensureAdmin() {
     return;
   }
   await q(
-    'INSERT INTO users (email, password_hash, name, role, tier) VALUES ($1, $2, $3, $4, $5)',
+    'INSERT INTO users (email, password_hash, name, role, tier, password_set) VALUES ($1, $2, $3, $4, $5, true)',
     [email, await bcrypt.hash(password, 10), 'Control Room', 'admin', 'premium']
   );
 }

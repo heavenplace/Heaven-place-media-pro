@@ -45,10 +45,10 @@ export default function Layout() {
           <div className="header-actions">
             {user ? (
               <>
-                <span className="muted small" title={user.email}>
+                <NavLink to="/account" className="muted small" title={user.email} style={{ textDecoration: 'none' }}>
                   {user.name}
                   {user.tier === 'premium' && <span className="badge badge-accent" style={{ marginLeft: 8 }}>Premium</span>}
-                </span>
+                </NavLink>
                 <button className="btn btn-sm" onClick={() => { logout(); navigate('/'); }}>
                   Sign out
                 </button>

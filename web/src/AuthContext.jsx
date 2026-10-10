@@ -42,6 +42,18 @@ export function AuthProvider({ children }) {
     return data.user;
   }, []);
 
+  // Set or change the password on the signed-in account. An account created with Google
+  // starts without one, so it is asked for the current password only once one is set —
+  // this is how a Google account gets a password it can sign into the Android apps with.
+  const setPassword = useCallback(async (password, currentPassword) => {
+    const data = await api('/auth/password', {
+      method: 'POST',
+      body: { password, ...(currentPassword ? { current_password: currentPassword } : {}) }
+    });
+    setUser(data.user);
+    return data.user;
+  }, []);
+
   // Re-reads the signed-in user — used after a purchase changes their tier.
   const refresh = useCallback(async () => {
     if (!getToken()) return null;
@@ -56,8 +68,8 @@ export function AuthProvider({ children }) {
   }, []);
 
   const value = useMemo(
-    () => ({ user, ready, login, register, loginWithGoogle, refresh, logout, isAdmin: user?.role === 'admin' }),
-    [user, ready, login, register, loginWithGoogle, refresh, logout]
+    () => ({ user, ready, login, register, loginWithGoogle, setPassword, refresh, logout, isAdmin: user?.role === 'admin' }),
+    [user, ready, login, register, loginWithGoogle, setPassword, refresh, logout]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

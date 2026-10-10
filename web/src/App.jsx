@@ -10,6 +10,7 @@ import Premium from './pages/Premium.jsx';
 import Studio from './pages/Studio.jsx';
 import Apply from './pages/Apply.jsx';
 import Auth from './pages/Auth.jsx';
+import Account from './pages/Account.jsx';
 import Admin from './pages/admin/Admin.jsx';
 import { useAuth } from './AuthContext.jsx';
 
@@ -53,6 +54,7 @@ export default function App() {
         <Route path="login" element={<Auth mode="login" />} />
         <Route path="register" element={<Auth mode="register" />} />
         <Route path="forgot-password" element={<Auth mode="forgot" />} />
+        <Route path="account" element={<Account />} />
         <Route
           path="admin"
           element={

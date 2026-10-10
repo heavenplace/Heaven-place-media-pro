@@ -14,8 +14,17 @@ const QUALITY = {
 };
 
 const MIME_CANDIDATES = {
-  video: ['video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm', 'video/mp4'],
-  audio: ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4']
+  video: [
+    'video/webm;codecs=vp9,opus',
+    'video/webm;codecs=vp8,opus',
+    'video/webm',
+    // Safari — iOS above all — records MP4 rather than WebM, and only names the codecs it
+    // can actually produce. Without these, a phone reports no usable type and the browser
+    // picks its own, which is how a broadcast ended up saved as a file a viewer refused.
+    'video/mp4;codecs=avc1.42E01E,mp4a.40.2',
+    'video/mp4'
+  ],
+  audio: ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4;codecs=mp4a.40.2', 'audio/mp4']
 };
 
 const WINDOWS = [
@@ -44,6 +53,24 @@ const pickMime = (audioOnly) =>
     (type) => typeof window.MediaRecorder?.isTypeSupported === 'function' && window.MediaRecorder.isTypeSupported(type)
   ) || '';
 
+/** Canvas capture, under the prefixed name some mobile browsers still ship. */
+const captureCanvas = (canvas, fps) =>
+  (canvas.captureStream || canvas.webkitCaptureStream)?.call(canvas, fps) || null;
+
+/**
+ * Keep the screen awake while broadcasting. A phone that dims, locks or backgrounds stops
+ * drawing the canvas, and a frozen canvas is a frozen broadcast — the wake lock is what
+ * keeps a phone broadcast running when the owner leaves it alone. Best-effort: a browser
+ * may refuse it, and it is dropped by the page's own visibility rules.
+ */
+async function acquireWakeLock() {
+  try {
+    return (await navigator.wakeLock?.request('screen')) || null;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Broadcast live from this phone to a station. The camera is drawn onto a canvas and the
  * canvas is what gets streamed, so switching between the front and back camera — or the
@@ -62,6 +89,7 @@ export default function LiveBroadcaster({ station, onStarted, onEnded, notify, f
   const queueRef = useRef(Promise.resolve());
   const sessionRef = useRef(null);
   const rafRef = useRef(0);
+  const wakeLockRef = useRef(null);
 
   const [facing, setFacing] = useState('environment');
   const [quality, setQuality] = useState(station.kind === 'tv' ? '1080p' : 'audio');
@@ -108,6 +136,12 @@ export default function LiveBroadcaster({ station, onStarted, onEnded, notify, f
     stopTracks(camRef);
     stopTracks(micRef);
     canvasStreamRef.current = null;
+    try {
+      wakeLockRef.current?.release();
+    } catch {
+      /* the browser already dropped it */
+    }
+    wakeLockRef.current = null;
     setPreviewing(false);
   }, []);
 
@@ -117,9 +151,24 @@ export default function LiveBroadcaster({ station, onStarted, onEnded, notify, f
       if (session) endSessionOnExit(session.id);
     };
     // A closed tab, a phone going to sleep or a reload: the broadcast is ended on the way
-    // out, so what the phone recorded is still archived on the station as a Relive item.
+    // out (below), so what the phone recorded is still archived on the station as a Relive
+    // item. A phone that puts this page in the background stops drawing the canvas, so the
+    // picture a listener sees freezes even though the microphone keeps recording — say so,
+    // and take the wake lock back when the owner returns to the screen.
+    const onVisibility = () => {
+      if (!sessionRef.current) return;
+      if (document.hidden) {
+        setError('The broadcast picture stops while this tab is in the background — keep this screen open and in front, and the phone unlocked.');
+      } else if (!wakeLockRef.current) {
+        acquireWakeLock().then((lock) => {
+          wakeLockRef.current = lock;
+        });
+      }
+    };
+    document.addEventListener('visibilitychange', onVisibility);
     window.addEventListener('pagehide', endOnExit);
     return () => {
+      document.removeEventListener('visibilitychange', onVisibility);
       window.removeEventListener('pagehide', endOnExit);
       if (recorderRef.current?.state === 'recording') recorderRef.current.stop();
       endOnExit();
@@ -174,16 +223,25 @@ export default function LiveBroadcaster({ station, onStarted, onEnded, notify, f
   function broadcastStream(target = preset) {
     const tracks = [];
     if (!target.audioOnly && canvasRef.current) {
-      if (!canvasStreamRef.current) canvasStreamRef.current = canvasRef.current.captureStream(target.frameRate);
-      tracks.push(...canvasStreamRef.current.getVideoTracks());
+      if (!canvasStreamRef.current) canvasStreamRef.current = captureCanvas(canvasRef.current, target.frameRate);
+      if (canvasStreamRef.current) tracks.push(...canvasStreamRef.current.getVideoTracks());
     }
     if (micRef.current) tracks.push(...micRef.current.getAudioTracks());
     return new MediaStream(tracks);
   }
 
   function queueChunk(sessionId, blob) {
+    // Each slice is appended to the one growing file a listener follows, so a slice lost to
+    // a momentary drop on a phone connection leaves a hole in everyone's stream. One retry
+    // rides out the blip; the next slice carries on regardless.
+    const send = (attempt) =>
+      api(`/live/${sessionId}/chunk`, { method: 'POST', body: blob, raw: true }).catch((err) => {
+        if (attempt === 0) return send(1);
+        throw err;
+      });
+
     queueRef.current = queueRef.current
-      .then(() => api(`/live/${sessionId}/chunk`, { method: 'POST', body: blob, raw: true }))
+      .then(() => send(0))
       .then((info) => setStats({ chunks: info.chunk_count, mb: (info.bytes / 1048576).toFixed(1) }))
       .catch((err) => setError(`Broadcast interrupted: ${err.message}. Check your connection.`));
   }
@@ -197,27 +255,39 @@ export default function LiveBroadcaster({ station, onStarted, onEnded, notify, f
       if (!ready) return;
       if (!window.MediaRecorder) return setError('This browser cannot record from the camera.');
 
-      const mime = pickMime(audioOnly);
+      const stream = broadcastStream();
+      if (!stream.getTracks().length) {
+        return setError(audioOnly ? 'No microphone is available to broadcast.' : 'No camera picture is available to broadcast.');
+      }
+
+      const preferred = pickMime(audioOnly);
+      // Built before the session so the type can be read back off the recorder: a browser
+      // that supports none of the listed types still records something, and the session —
+      // and so every listener — must be told what that file really is.
+      const recorder = new MediaRecorder(stream, {
+        ...(preferred ? { mimeType: preferred } : {}),
+        videoBitsPerSecond: preset.videoBitsPerSecond,
+        audioBitsPerSecond: preset.audioBitsPerSecond
+      });
+      const mime = recorder.mimeType || preferred || (audioOnly ? 'audio/webm' : 'video/webm');
+
       const { session } = await api('/live', {
         method: 'POST',
         body: {
           station_id: station.id,
           title: title.trim() || `${station.name} live`,
           kind: audioOnly ? 'audio' : 'video',
-          mime: mime || null,
+          mime,
           ...(duration === 'permanent' ? { permanent: true } : { hours: Number(duration) })
         }
       });
       sessionRef.current = session;
 
-      const recorder = new MediaRecorder(broadcastStream(), {
-        ...(mime ? { mimeType: mime } : {}),
-        videoBitsPerSecond: preset.videoBitsPerSecond,
-        audioBitsPerSecond: preset.audioBitsPerSecond
-      });
       recorder.ondataavailable = (event) => event.data?.size && queueChunk(session.id, event.data);
       recorderRef.current = recorder;
       recorder.start(2000);
+      // Hold the screen awake for the length of the broadcast.
+      wakeLockRef.current = await acquireWakeLock();
 
       setLive(true);
       setPermanent(Boolean(session.permanent));
@@ -286,7 +356,7 @@ export default function LiveBroadcaster({ station, onStarted, onEnded, notify, f
 
       <div className="live-stage">
         <video ref={previewRef} className="live-video" playsInline muted />
-        <canvas ref={canvasRef} hidden />
+        <canvas ref={canvasRef} className="live-canvas" aria-hidden="true" />
         {!previewing && (
           <div className="live-placeholder">
             {audioOnly ? '🎙️ Audio only — the microphone is the source' : 'Camera is off — start it below'}

@@ -33,9 +33,10 @@ used when no secret is set.
   `tier = 'premium'`.
 - If the address **already exists** — someone registered it as a listener, or signed in
   with Google — it is promoted to `admin` but keeps its own password. A Google-created
-  account has an unguessable hash and so has no password login until one is set (which is
-  what the Android apps need, since Google sign-in does not work in a WebView):
-  `UPDATE users SET password_hash = <bcryptjs hash of ADMIN_PASSWORD>`.
+  account has no password its owner knows until one is set, which is what the Android apps
+  need (they sign in with email + password only). Sign in with Google and set one from
+  `/account`; only if that is impossible, do it by hand:
+  `UPDATE users SET password_hash = <bcryptjs hash of ADMIN_PASSWORD>, password_set = true`.
 
 Everyone else registers from `/register`. Access levels: a listener account can own
 stations and use the studio (`/studio`, which only ever shows its own stations); `/admin`
@@ -76,11 +77,23 @@ key — a placeholder only makes the app start, it does not take money.
   Google sign-in uses the browser credential flow: the web app renders Google's own
   button (`web/src/components/GoogleSignIn.jsx`) and posts the ID token it hands back
   to `POST /api/auth/google`, which verifies it against the client id (`api/google.js`)
-  and links or creates the account by verified email. Accounts created this way get an
-  unguessable password hash, so the password form stays shut for them. Only
-  `GOOGLE_CLIENT_ID` is needed — no client secret, no redirect URI. The origin the
+  and links or creates the account by verified email. Accounts created this way start with
+  `password_set = false` and an unguessable hash, so the password form stays shut for them
+  until they set one. Only `GOOGLE_CLIENT_ID` is needed — no client secret, no redirect URI. The origin the
   button is served from must be listed under "Authorized JavaScript origins" for that
   client id in the Google console, or Google refuses to render the button.
+- **A Google account can carry a password.** `users.password_set` is the flag that tells
+  "no password yet" from "a password the owner knows", because the unguessable hash a
+  Google sign-up stores looks exactly like a real one. Register and `ensureAdmin` set it
+  true; a Google sign-up leaves it false. The column arrives in `api/db.js` MIGRATIONS with
+  `DEFAULT false`, which is also what lets an account created *before* it set its first
+  password without one. `POST /api/auth/password` (`{ current_password?, password }`,
+  signed in) is the one route: it demands the current password only when `password_set` is
+  true, then stores the new hash and sets the flag. `publicUser()` reports the flag as
+  `has_password`, and `/account` (`web/src/pages/Account.jsx`, linked from the name in the
+  header) offers "Set a password" or "Change your password" accordingly. This is the path
+  that gives a Google-created account a password the native apps can sign in with — they
+  use email + password only.
 - **Uploads** go to the `uploads` volume and are served from `/uploads/...`.
   Audio/video/image only, 500 MB per file. Phone recordings are captured with
   `MediaRecorder` in the browser and uploaded the same way (`FileDrop.jsx`).
@@ -151,6 +164,22 @@ key — a placeholder only makes the app start, it does not take money.
       every ended session that still has no `media` row. `saveRecording` is idempotent —
       its insert is guarded on the recording url — so an end request racing the sweep still
       yields one Relive item. Opening a new window ends *and archives* the previous one.
+  - Four things keep a *phone* broadcast up, all in `LiveBroadcaster.jsx`:
+    - The `<canvas>` is laid out off-screen (`.live-canvas`) rather than `hidden`: a
+      `display:none` canvas is one some mobile browsers stop capturing from.
+    - The recorder is built **before** the live session so `recorder.mimeType` can be read
+      back and stored as the session's `mime` — a browser that supports none of the listed
+      types (Safari records MP4, not WebM) still records something, and the session, the
+      file extension `api/routes/live.js` writes and every listener's `LivePlayer` all key
+      off that value. `video/mp4;codecs=avc1…` and `audio/mp4;codecs=mp4a…` are in the
+      candidate list for Safari; canvas capture falls back to `webkitCaptureStream`.
+    - A screen **wake lock** is held for the length of the broadcast, so a phone left alone
+      does not dim or lock and freeze the canvas. It is re-taken when the page becomes
+      visible again, and a `visibilitychange` handler says so when the tab goes to the
+      background mid-broadcast.
+    - Each two-second slice is retried **once**. Slices are appended to the one growing file
+      listeners follow, so a slice lost to a momentary drop leaves a hole in everyone's
+      stream.
   - Limits worth knowing: capture only runs while the page is open and in the foreground
     (a backgrounded tab stops drawing the canvas, which freezes the stream), quality is
     bounded by the phone's encoder and its connection, viewers need a browser with
@@ -328,7 +357,8 @@ docker compose -f docker-compose.mobile.yml run --rm android
 - The apps sign in with email + password only (the account form talks to
   `/api/auth/login` and `/api/auth/register` and keeps the bearer token in
   `SharedPreferences`). Google sign-in stays a web-only flow — a native Google Sign-In
-  client is not wired up.
+  client is not wired up, so an account created with Google sets a password once on the web
+  at `/account` and then signs in here with it.
 - **What the native apps cover today**: the listener app has sign in/browse (Home, Radio,
   TV, Podcasts), station pages and one persistent ExoPlayer that keeps audio running
   behind a bar with artwork/title/live badge, plus mute/fullscreen for video; the control

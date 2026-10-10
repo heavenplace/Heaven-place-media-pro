@@ -6,7 +6,18 @@ const SECRET = process.env.JWT_SECRET || 'development-only-secret';
 export const signToken = (user) => jwt.sign({ sub: user.id }, SECRET, { expiresIn: '30d' });
 
 export function publicUser(row) {
-  return { id: row.id, email: row.email, name: row.name, role: row.role, tier: row.tier, avatar_url: row.avatar_url };
+  return {
+    id: row.id,
+    email: row.email,
+    name: row.name,
+    role: row.role,
+    tier: row.tier,
+    avatar_url: row.avatar_url,
+    // False for an account created with Google that never set one: the account page offers
+    // "set a password" instead of "change password", which is also what the Android apps
+    // need, since they sign in with email + password only.
+    has_password: Boolean(row.password_set)
+  };
 }
 
 /**
@@ -22,7 +33,7 @@ export function auth({ required = true, admin = false } = {}) {
     if (token) {
       try {
         const payload = jwt.verify(token, SECRET);
-        const { rows } = await q('SELECT id, email, name, role, tier, avatar_url FROM users WHERE id = $1', [payload.sub]);
+        const { rows } = await q('SELECT id, email, name, role, tier, avatar_url, password_set FROM users WHERE id = $1', [payload.sub]);
         if (rows.length) req.user = publicUser(rows[0]);
       } catch {
         /* fall through to the unauthenticated branch */
