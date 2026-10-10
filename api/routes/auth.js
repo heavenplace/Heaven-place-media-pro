@@ -13,12 +13,15 @@ router.post('/register', async (req, res) => {
   if (!email || !password || !name) return res.status(400).json({ error: 'Name, email and password are required' });
   if (String(password).length < 8) return res.status(400).json({ error: 'Password must be at least 8 characters' });
 
-  const existing = await q('SELECT id FROM users WHERE lower(email) = lower($1)', [email]);
+  // Trim once: a spaced address ("owner@gmail.com ") must not slip past the duplicate check
+  // below and land as a second row beside the account it belongs to.
+  const address = String(email).trim();
+  const existing = await q('SELECT id FROM users WHERE lower(email) = lower($1)', [address]);
   if (existing.rows.length) return res.status(409).json({ error: 'That email is already registered' });
 
   const { rows } = await q(
     'INSERT INTO users (email, password_hash, name, password_set) VALUES ($1, $2, $3, true) RETURNING id, email, name, role, tier, avatar_url, password_set',
-    [String(email).trim(), await bcrypt.hash(String(password), 10), String(name).trim()]
+    [address, await bcrypt.hash(String(password), 10), String(name).trim()]
   );
   const user = publicUser(rows[0]);
   await logActivity(user.id, 'signup', `${user.name} created an account`);
@@ -29,9 +32,12 @@ router.post('/login', async (req, res) => {
   const { email, password } = req.body ?? {};
   if (!email || !password) return res.status(400).json({ error: 'Email and password are required' });
 
+  // The address is trimmed exactly like register stores it: a phone keyboard or a password
+  // manager commonly leaves a trailing space ("owner@gmail.com "), and a stored address never
+  // has one — untrimmed, a correct password still came back "Incorrect email or password".
   const { rows } = await q(
     'SELECT id, email, name, role, tier, avatar_url, password_hash, password_set FROM users WHERE lower(email) = lower($1)',
-    [email]
+    [String(email).trim()]
   );
   if (!rows.length || !(await bcrypt.compare(String(password), rows[0].password_hash))) {
     return res.status(401).json({ error: 'Incorrect email or password' });
