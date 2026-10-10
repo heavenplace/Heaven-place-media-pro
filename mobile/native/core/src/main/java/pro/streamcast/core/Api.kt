@@ -74,6 +74,24 @@ object Api {
             }
         }
 
+    /**
+     * Posts raw bytes with the given content type — one slice of a phone broadcast, to
+     * `POST /api/live/:id/chunk`, which appends it to the session's recording. The API takes
+     * the mime from the session, so the type here is what the request declares rather than
+     * what decides the file.
+     */
+    suspend fun postBytes(path: String, bytes: ByteArray, contentType: String): JSONObject =
+        withContext(Dispatchers.IO) {
+            val builder = Request.Builder().url(baseUrl.trimEnd('/') + "/api" + path)
+                .post(bytes.toRequestBody(contentType.toMediaTypeOrNull()))
+            token?.let { builder.header("Authorization", "Bearer $it") }
+            client.newCall(builder.build()).execute().use { response ->
+                val text = response.body?.string().orEmpty()
+                if (!response.isSuccessful) throw ApiException(errorMessage(text, response.code), response.code)
+                if (text.isBlank()) JSONObject() else JSONObject(text)
+            }
+        }
+
     private val uploads: OkHttpClient = client.newBuilder()
         .writeTimeout(10, TimeUnit.MINUTES)
         .readTimeout(5, TimeUnit.MINUTES)

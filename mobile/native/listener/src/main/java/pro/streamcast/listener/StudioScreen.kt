@@ -26,6 +26,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -78,7 +79,7 @@ private val STUDIO_TABS = listOf(
     "settings" to "Station settings"
 )
 
-private val WINDOWS = listOf(
+internal val WINDOWS = listOf(
     "1" to "1 hour",
     "4" to "4 hours",
     "12" to "12 hours",
@@ -112,6 +113,10 @@ fun StudioScreen(onOpenLicence: () -> Unit = {}) {
     val reload: () -> Unit = { stations.reload(); media.reload(); live.reload(); shows.reload() }
     val notify: (String) -> Unit = { notice = it; error = null }
     val fail: (String) -> Unit = { error = it; notice = null }
+
+    // A broadcast started here ends when the owner leaves the studio — the same way closing
+    // the web studio's page does — and the API archives it as a Relive item either way.
+    DisposableEffect(Unit) { onDispose { LiveBroadcast.endOnExit() } }
 
     Column(Modifier.fillMaxSize()) {
         Column(Modifier.fillMaxWidth().background(Brand.bg).padding(horizontal = 14.dp)) {
@@ -490,6 +495,9 @@ private fun LiveTab(
     }
 
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(14.dp)) {
+        item { SectionTitle("Go live from this phone") }
+        item { PhoneGoLive(station, notify, fail, reload) }
+
         item { SectionTitle("Go live on ${station.name}") }
         item {
             Column(

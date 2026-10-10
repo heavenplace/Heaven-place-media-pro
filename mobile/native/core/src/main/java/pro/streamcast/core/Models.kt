@@ -74,7 +74,13 @@ data class Playable(
     val url: String,
     val video: Boolean,
     val live: Boolean,
-    val mediaId: Int?
+    val mediaId: Int?,
+    /**
+     * The live session behind a phone broadcast, whose file is still being appended to. The
+     * player follows it (see PlayerController) instead of opening a stream that is not there
+     * yet; null for anything that is already a complete file.
+     */
+    val liveSessionId: Int? = null
 )
 
 data class LiveSession(
@@ -120,7 +126,10 @@ data class LiveSession(
             url = Api.absolute(path) ?: return null,
             video = video,
             live = true,
-            mediaId = null
+            mediaId = null,
+            // Only a phone broadcast is still being written; a window over a published item
+            // is a complete file and plays as one.
+            liveSessionId = if (isPhoneBroadcast) id else null
         )
     }
 }

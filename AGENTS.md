@@ -140,7 +140,9 @@ key — a placeholder only makes the app start, it does not take money.
   - a *window* over an item that was already published — a set duration (1/4/12/24 hours)
     or `permanent = true` for 24/7. An open-ended window stores no `expires_at`, so every
     "on air" check is `status = 'live' AND (expires_at IS NULL OR expires_at > now())`.
-  - a *phone broadcast*, where the owner's device is the source. `LiveBroadcaster.jsx`
+  - a *phone broadcast*, where the owner's device is the source — from the web studio's
+    `LiveBroadcaster.jsx` or the Android studio's `LiveBroadcast.kt` (see the mobile notes).
+    `LiveBroadcaster.jsx`
     captures the camera and microphone, paints the video onto a canvas (so switching
     between the front and back camera keeps one continuous stream) and records it with
     `MediaRecorder` in two-second slices. Each slice goes to `POST /api/live/:id/chunk`
@@ -183,8 +185,9 @@ key — a placeholder only makes the app start, it does not take money.
   - Limits worth knowing: capture only runs while the page is open and in the foreground
     (a backgrounded tab stops drawing the canvas, which freezes the stream), quality is
     bounded by the phone's encoder and its connection, viewers need a browser with
-    MediaSource for the live edge, and a station has one broadcast at a time — opening a
-    new window ends the previous one.
+    MediaSource for the live edge — the native listener app follows the same file instead
+    (see the mobile notes) — and a station has one broadcast at a time: opening a new window
+    ends the previous one, and so does a broadcast started from the Android studio.
 - **Payments** run through Stripe Checkout once `STRIPE_SECRET_KEY` is set.
   `POST /api/payments/checkout` opens a hosted session for a Premium membership
   (monthly) or one paid download; access is granted by `POST /api/payments/confirm`
@@ -364,6 +367,15 @@ docker compose -f docker-compose.mobile.yml run --rm android
   behind a bar with artwork/title/live badge, plus mute/fullscreen for video; the control
   room has Dashboard, Stations (approve/suspend/delete), Moderation (flag/hide/restore/
   delete), Live (take off air) and Users (role/tier).
+- **A listener watches a phone broadcast from the app as well.** `PlayerController` keys off
+  `Playable.liveSessionId`, which `LiveSession.toPlayable()` sets for anything whose `mime`
+  marks it a phone broadcast (a window over a published item has none). For one of those it
+  holds off opening the file until the phone's first slice has landed, then re-opens the
+  growing file at the position it had reached whenever `GET /api/live/:id/manifest` reports
+  more bytes — so playback sits a couple of seconds behind the live edge, exactly as the web
+  `LivePlayer` does — and opens the final part once more when the session ends, leaving what
+  played available on the station as a Relive item. Everything else plays as a complete file
+  as before.
 - **The listener home mirrors the web home page** (`HomeScreen` in `Screens.kt`): hero
   (badge, strapline, blurb, "Browse radio"/"Browse TV"), On air now with the same card
   copy ("until HH:mm" / "on air 24/7", "Tune in"/"Station", or "Watch live" for a phone
@@ -389,10 +401,20 @@ docker compose -f docker-compose.mobile.yml run --rm android
     `POST /api/prcpay/checkout` with `kind = 'licence'`), against the same rows the web's
     `/apply` page writes. The studio's empty state offers it too. Card checkout and the
     manual transfer-proof upload stay web-only.
-  - **Still web-only**: broadcasting from the phone's own camera/mic (`LiveBroadcaster.jsx`
-    records canvas slices into `POST /api/live/:id/chunk` — Android's `MediaRecorder` has
-    no incremental webm output, so the native studio does not offer it), premium
-    checkout/downloads, access-request approvals and the APK download page.
+  - **Going live from the phone works here too.** `LiveBroadcast.kt` is the native counterpart
+    of the web studio's broadcaster: `MediaRecorder` writes a WebM file in the app cache
+    (VP8 + Opus, or Opus alone for a radio station) and every couple of seconds
+    `PhoneBroadcast.kt` posts whatever the recorder appended since the last slice to
+    `POST /api/live/:id/chunk` — the same endpoint, and the same growing file the website's
+    `LiveBroadcaster.jsx`, the web `LivePlayer` and the native viewer all follow. WebM is the
+    one container Android writes progressively — an MP4 gets its index only when recording
+    stops — and `MediaRecorder.OutputFormat.WEBM` arrived in Android 10, so below API 29 the
+    panel says so and offers the published-item window instead. The recorder is built before
+    the session, so a device that refuses the camera fails before anything goes on air; the
+    broadcast ends when the owner stops it or leaves the studio, and the API's sweep archives
+    it either way.
+  - **Still web-only**: premium checkout/downloads, access-request approvals and the APK
+    download page.
 - **`JSONObject.optString` turns a JSON null into the string `"null"`** on Android, which
   once made a live window look like a phone broadcast and pointed the player at
   `/null`. Every optional column goes through the private `JSONObject.text()` helper in
