@@ -22,6 +22,42 @@ First boot installs `node_modules` into named volumes (`api_node_modules`,
 `web_node_modules`) — this keeps the repo clean and survives restarts.
 Demo content is seeded only when the `stations` table is empty (`SEED_DEMO=1`).
 
+## Deploy
+
+The sandbox stack is a development environment and there is no publish step inside
+Base44: `docker-compose.prod.yml` is the production stack, for a host that stays up (a VPS
+or any machine that runs Docker). The app needs a long-running Node process, Postgres and
+a disk for the media it serves, so shared/cPanel hosting cannot run it.
+
+```bash
+cp deploy/.env.prod.example .env.prod     # fill it in; .env.prod is git-ignored
+docker compose -f docker-compose.prod.yml --env-file .env.prod up -d --build
+```
+
+- `web` is the only public service (ports 80/443). It is Caddy serving the built site and
+  forwarding `/api` and `/uploads` to `api`, so the site, the API and the media share one
+  origin — which is what the web client's relative `/api` calls and the Android apps
+  (`BuildConfig.API_BASE_URL`, called as `<origin>/api/...`) both need.
+- `SITE_ADDRESS` is the subdomain, and Caddy obtains and renews its Let's Encrypt
+  certificate — so the DNS record must point at the host first and 80/443 must be
+  reachable. That certificate is where the https comes from; nothing else terminates TLS.
+- `api` runs the same source as the sandbox without the watcher (`api/Dockerfile`) and
+  creates the schema and the `ADMIN_EMAIL` account on boot. `JWT_SECRET` must be set and
+  must not change later: unset, it falls back to a hardcoded development value.
+- Uploads live in the `uploads` volume and the database in `db_data` — both have to
+  survive a restart, and both are what `deploy/migrate-data.sh` moves.
+- The APK buttons serve `web/public/downloads/*.apk`, which is build output and
+  git-ignored: build them against the deployed origin before building the web image
+  (`API_BASE_URL=https://<subdomain> docker compose -f docker-compose.mobile.yml run --rm android`),
+  or the buttons 404.
+- Google and Stripe need the new origin too: add it to the OAuth client's authorized
+  JavaScript origins, and point the Stripe webhook at
+  `https://<subdomain>/api/payments/webhook`.
+
+Carrying the sandbox's data over: `./deploy/migrate-data.sh export <dir>` here, copy the
+directory to the server, then `./deploy/migrate-data.sh import <dir>` there. The dump holds
+real accounts, so it stays out of the repo.
+
 ## Sign in
 
 The main control-room account is whatever `ADMIN_EMAIL` names, with `ADMIN_PASSWORD` as
