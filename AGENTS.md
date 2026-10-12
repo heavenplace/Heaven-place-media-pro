@@ -74,12 +74,23 @@ in, and it refuses to start while any required value is still a `change-me` plac
 Its DNS preflight is a warning, not a stop: Caddy keeps retrying the certificate on its
 own once the name resolves here.
 
-**That name currently resolves to InfinityFree's free shared hosting** (185.27.134.101),
-which serves a PHP/MySQL plan from an `/htdocs` directory. It can host a landing page at
-this address, but it cannot run this app: the API needs a long-running Node process, the
-data lives in Postgres, uploads need real disk, and nothing on that plan runs Docker or a
-long-lived process. The stack therefore needs a Docker host, and the A record for
-`streamcastpro.ct.ws` has to point there before the site can serve https.
+**Do not deploy this stack to `streamcastpro.ct.ws` as it stands.** That name resolves to
+InfinityFree's free shared hosting (185.27.134.101), and both halves of that are a dead end:
+
+- **The plan cannot run the app.** InfinityFree's free hosting is PHP + MySQL served from an
+  `/htdocs` directory: no Node process, no Postgres, no Docker, no shell access, and no
+  long-running process at all — their own forum states that a 24/7 background process is
+  "not something you would find in real free hosting". Premium does not change this, so it
+  cannot host the API either.
+- **The address cannot be repointed either.** `ct.ws` is InfinityFree's own domain, served
+  from their nameservers, so an A record pointing this name at a VPS is not something the
+  account controls.
+
+A deployment therefore needs (a) a machine that runs Docker, and (b) a hostname whose DNS
+its owner controls. For a first live test `<host ip>.sslip.io` is a free name that resolves
+to that IP and Let's Encrypt will issue for; a registered domain is the real answer. Until
+one of those exists, leave `SITE_ADDRESS`/`PUBLIC_ORIGIN` at whatever name actually resolves
+to the host — `deploy/deploy.sh` warns when the name does not point at the machine it runs on.
 
 Left to do on the host, none of which lives in the repository:
 
