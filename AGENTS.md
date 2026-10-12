@@ -58,6 +58,24 @@ Carrying the sandbox's data over: `./deploy/migrate-data.sh export <dir>` here, 
 directory to the server, then `./deploy/migrate-data.sh import <dir>` there. The dump holds
 real accounts, so it stays out of the repo.
 
+### This app's deployment
+
+The production subdomain is **`streamcastpro.ct.ws`**. `deploy/.env.prod.example` already
+carries it (`SITE_ADDRESS=streamcastpro.ct.ws`, `PUBLIC_ORIGIN=https://streamcastpro.ct.ws`),
+so the copy only needs its passwords filled in — those two lines are not values to change.
+
+Left to do on the host, none of which lives in the repository:
+
+- Point an A record for `streamcastpro.ct.ws` at the host and open ports 80 and 443
+  **before the first start** — Caddy asks Let's Encrypt for a certificate for exactly that
+  name, and the challenge only passes once the name resolves there.
+- Add `https://streamcastpro.ct.ws` to the Google OAuth client's authorized JavaScript
+  origins, and point the Stripe webhook at
+  `https://streamcastpro.ct.ws/api/payments/webhook`.
+- Rebuild the APKs against the deployed origin before building the web image, or the
+  download buttons 404 (they are git-ignored build output):
+  `API_BASE_URL=https://streamcastpro.ct.ws docker compose -f docker-compose.mobile.yml run --rm android`.
+
 ## Sign in
 
 The main control-room account is whatever `ADMIN_EMAIL` names, with `ADMIN_PASSWORD` as
