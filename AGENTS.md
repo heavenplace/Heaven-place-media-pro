@@ -64,6 +64,23 @@ The production subdomain is **`streamcastpro.ct.ws`**. `deploy/.env.prod.example
 carries it (`SITE_ADDRESS=streamcastpro.ct.ws`, `PUBLIC_ORIGIN=https://streamcastpro.ct.ws`),
 so the copy only needs its passwords filled in — those two lines are not values to change.
 
+`deploy/deploy.sh` is the one command that does the rest on the host:
+
+    ./deploy/deploy.sh            # validate, build, start, health-check
+    ./deploy/deploy.sh --check    # validate only — starts nothing
+
+A first run writes `.env.prod` from the example and stops so the passwords can be filled
+in, and it refuses to start while any required value is still a `change-me` placeholder.
+Its DNS preflight is a warning, not a stop: Caddy keeps retrying the certificate on its
+own once the name resolves here.
+
+**That name currently resolves to InfinityFree's free shared hosting** (185.27.134.101),
+which serves a PHP/MySQL plan from an `/htdocs` directory. It can host a landing page at
+this address, but it cannot run this app: the API needs a long-running Node process, the
+data lives in Postgres, uploads need real disk, and nothing on that plan runs Docker or a
+long-lived process. The stack therefore needs a Docker host, and the A record for
+`streamcastpro.ct.ws` has to point there before the site can serve https.
+
 Left to do on the host, none of which lives in the repository:
 
 - Point an A record for `streamcastpro.ct.ws` at the host and open ports 80 and 443
