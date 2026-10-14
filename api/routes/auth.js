@@ -3,6 +3,7 @@ import bcrypt from 'bcryptjs';
 import { randomBytes } from 'node:crypto';
 import { q } from '../db.js';
 import { auth, publicUser, signToken } from '../auth.js';
+import { isSingleAddress, normalizeEmail } from '../emails.js';
 import { verifyGoogleCredential } from '../google.js';
 import { logActivity } from '../guards.js';
 
@@ -13,9 +14,13 @@ router.post('/register', async (req, res) => {
   if (!email || !password || !name) return res.status(400).json({ error: 'Name, email and password are required' });
   if (String(password).length < 8) return res.status(400).json({ error: 'Password must be at least 8 characters' });
 
-  // Trim once: a spaced address ("owner@gmail.com ") must not slip past the duplicate check
-  // below and land as a second row beside the account it belongs to.
-  const address = String(email).trim();
+  // Normalised once, before anything is stored or compared: a spaced address
+  // ("owner@gmail.com ") must not land as a second row beside the account it belongs to, and
+  // the invisible characters a phone keyboard or a paste leaves in an address must never
+  // reach the column — an address carrying one is one its owner can no longer sign in with.
+  const address = normalizeEmail(email);
+  if (!isSingleAddress(address)) return res.status(400).json({ error: 'Enter one email address' });
+
   const existing = await q('SELECT id FROM users WHERE lower(email) = lower($1)', [address]);
   if (existing.rows.length) return res.status(409).json({ error: 'That email is already registered' });
 
@@ -32,12 +37,19 @@ router.post('/login', async (req, res) => {
   const { email, password } = req.body ?? {};
   if (!email || !password) return res.status(400).json({ error: 'Email and password are required' });
 
-  // The address is trimmed exactly like register stores it: a phone keyboard or a password
-  // manager commonly leaves a trailing space ("owner@gmail.com "), and a stored address never
-  // has one — untrimmed, a correct password still came back "Incorrect email or password".
+  // The address is read exactly as register stores it (normalizeEmail trims it and drops the
+  // invisible characters), so the address the owner types matches the row on file even when
+  // the phone that typed it left a left-to-right mark in front of it.
+  const address = normalizeEmail(email);
+  if (!isSingleAddress(address)) return res.status(400).json({ error: 'Enter one email address' });
+
+  // ORDER BY id LIMIT 1: where two rows do share one address — an owner locked out by those
+  // characters registered again, which the old register allowed — sign-in reproducibly lands
+  // on the older account, the one holding the stations, rather than on whichever row comes
+  // back first.
   const { rows } = await q(
-    'SELECT id, email, name, role, tier, avatar_url, password_hash, password_set FROM users WHERE lower(email) = lower($1)',
-    [String(email).trim()]
+    'SELECT id, email, name, role, tier, avatar_url, password_hash, password_set FROM users WHERE lower(email) = lower($1) ORDER BY id LIMIT 1',
+    [address]
   );
   if (!rows.length || !(await bcrypt.compare(String(password), rows[0].password_hash))) {
     return res.status(401).json({ error: 'Incorrect email or password' });
@@ -60,9 +72,12 @@ router.post('/google', async (req, res) => {
     return res.status(error.status || 401).json({ error: error.message });
   }
 
+  // Normalised the same way, so Google sign-in finds — and never creates a second row beside
+  // — an account whose address was once stored with an invisible character in it.
+  const address = normalizeEmail(profile.email);
   const existing = await q(
-    'SELECT id, email, name, role, tier, avatar_url, password_set FROM users WHERE lower(email) = lower($1)',
-    [profile.email]
+    'SELECT id, email, name, role, tier, avatar_url, password_set FROM users WHERE lower(email) = lower($1) ORDER BY id LIMIT 1',
+    [address]
   );
 
   if (existing.rows.length) {
@@ -76,7 +91,7 @@ router.post('/google', async (req, res) => {
   // POST /api/auth/password lets the owner set a first one without a current password.
   const { rows } = await q(
     'INSERT INTO users (email, password_hash, name, avatar_url) VALUES ($1,$2,$3,$4) RETURNING id, email, name, role, tier, avatar_url, password_set',
-    [profile.email, await bcrypt.hash(randomBytes(32).toString('hex'), 10), profile.name, profile.picture]
+    [address, await bcrypt.hash(randomBytes(32).toString('hex'), 10), profile.name, profile.picture]
   );
   const user = publicUser(rows[0]);
   await logActivity(user.id, 'signup', `${user.name} created an account with Google`);

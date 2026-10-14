@@ -148,6 +148,24 @@ the secrets hold.
   `docker compose -f docker-compose.base44.yml up -d --force-recreate api` — because a
   plain `up -d` leaves the container on its old environment.
 
+- **An address is normalised in one place before it is stored or looked up.** `api/emails.js`
+  holds `normalizeEmail()` — the invisible characters a phone keyboard, a mail-app copy or a
+  paste leaves in an address (the left-to-right mark U+200E an Android keyboard puts in front
+  of a pasted address, a zero-width space, a non-breaking space, a soft hyphen) are dropped and
+  the address trimmed — and `isSingleAddress()`. `String.trim()` alone removes none of those
+  characters, and an address stored with one can never be matched by the address its owner
+  types: two station owners were locked out of their own accounts that way, refused with
+  "Incorrect email or password" whatever they typed. Register, sign-in and Google sign-in all
+  normalise through it, so the address the owner types always matches the row on file.
+  `isSingleAddress()` refuses a pasted contact list (several addresses separated by line
+  breaks — one owner's row held five) with "Enter one email address" instead of storing an
+  address nobody can sign in with. The web form's own `type="email"` validation rejects a
+  marked address before it is ever posted, so a mark reaches the API from the native apps,
+  whose address fields are plain text.
+- Sign-in takes the oldest matching row (`ORDER BY id LIMIT 1`): where two rows do carry one
+  address — an owner locked out by those characters registered again, which register used to
+  allow — the account that signs in is the older one, the one holding the stations.
+
 Everyone else registers from `/register`. Access levels: a listener account can own
 stations and use the studio (`/studio`, which only ever shows its own stations); `/admin`
 and every `/api/admin/*` route are `role = 'admin'` only, and a signed-out or non-admin
