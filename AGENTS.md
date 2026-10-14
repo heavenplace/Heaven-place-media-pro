@@ -262,7 +262,10 @@ key — a placeholder only makes the app start, it does not take money.
     that exist, and `LivePlayer.jsx` appends each new byte range (a `Range` request on
     `/uploads/live/...`, which express.static serves) to a `MediaSource` buffer, staying a
     couple of seconds behind the live edge. A browser without MediaSource falls back to
-    playing the file.
+    playing the file, and so does one whose buffer refuses the stream — a recording that
+    carries no picture, say, which is a listener left staring at a black player otherwise.
+    A browser that refuses to start playback on its own says "Press play to start the
+    stream." rather than leaving a still frame.
   - **Every broadcast ends up on the station's Relive page**, whatever stops it. Ending it
     by hand (`POST /api/live/:id/end`) archives what was recorded as a **Relive** item: a
     normal `media` row with `source = 'live'`, shown in the station page's Relive section
@@ -276,9 +279,15 @@ key — a placeholder only makes the app start, it does not take money.
       every ended session that still has no `media` row. `saveRecording` is idempotent —
       its insert is guarded on the recording url — so an end request racing the sweep still
       yields one Relive item. Opening a new window ends *and archives* the previous one.
-  - Four things keep a *phone* broadcast up, all in `LiveBroadcaster.jsx`:
-    - The `<canvas>` is laid out off-screen (`.live-canvas`) rather than `hidden`: a
-      `display:none` canvas is one some mobile browsers stop capturing from.
+  - Five things keep a *phone* broadcast up, all in `LiveBroadcaster.jsx`:
+    - The `<canvas>` **is** the studio's stage: the owner watches the picture being
+      streamed, not the raw camera (that is the off-screen `.live-source` element, still laid
+      out because it is the canvas's drawing source). The canvas stays a real, painted
+      element — a `display:none` canvas is one some mobile browsers stop capturing from.
+    - The recorder does not start until the camera has produced a frame
+      (`waitForFirstFrame`): a broadcast that opens on an empty canvas reaches viewers as a
+      black picture, and a device that never delivers a frame records no picture track at
+      all — which is what a viewer's player then refuses to show.
     - The recorder is built **before** the live session so `recorder.mimeType` can be read
       back and stored as the session's `mime` — a browser that supports none of the listed
       types (Safari records MP4, not WebM) still records something, and the session, the

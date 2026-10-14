@@ -246,6 +246,18 @@ export default function LiveBroadcaster({ station, onStarted, onEnded, notify, f
       .catch((err) => setError(`Broadcast interrupted: ${err.message}. Check your connection.`));
   }
 
+  // A recorder started before the camera has produced its first frame streams an empty
+  // canvas: the file opens on a black picture, and a device that never delivers a frame
+  // records no video track at all — a broadcast nobody can watch. Wait for the picture.
+  const waitForFirstFrame = async (timeoutMs = 6000) => {
+    const video = previewRef.current;
+    const deadline = Date.now() + timeoutMs;
+    while (video && !video.videoWidth && Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, 150));
+    }
+    return Boolean(video && video.videoWidth);
+  };
+
   const start = async () => {
     setBusy(true);
     setError('');
@@ -254,6 +266,9 @@ export default function LiveBroadcaster({ station, onStarted, onEnded, notify, f
       const ready = previewing || (await openSource());
       if (!ready) return;
       if (!window.MediaRecorder) return setError('This browser cannot record from the camera.');
+      if (!audioOnly && !(await waitForFirstFrame())) {
+        return setError('The camera has not sent a picture, so your viewers would see nothing. Check that the stage above shows the scene, then try again.');
+      }
 
       const stream = broadcastStream();
       if (!stream.getTracks().length) {
@@ -355,14 +370,22 @@ export default function LiveBroadcaster({ station, onStarted, onEnded, notify, f
       </p>
 
       <div className="live-stage">
-        <video ref={previewRef} className="live-video" playsInline muted />
+        {/* The stage is the broadcast canvas itself rather than the raw camera: what the
+            owner watches here is the exact picture going out to every viewer. */}
         <canvas ref={canvasRef} className="live-canvas" aria-hidden="true" />
-        {!previewing && (
+        {/* Only the canvas's drawing source, so it stays laid out but out of sight. */}
+        <video ref={previewRef} className="live-source" playsInline muted />
+        {(!previewing || audioOnly) && (
           <div className="live-placeholder">
             {audioOnly ? '🎙️ Audio only — the microphone is the source' : 'Camera is off — start it below'}
           </div>
         )}
       </div>
+      {previewing && !audioOnly && (
+        <p className="tiny muted" style={{ margin: 0 }}>
+          {live ? 'You are looking at what your viewers see right now.' : 'This is the picture your viewers will see.'}
+        </p>
+      )}
 
       <div className="row">
         <div className="grow">

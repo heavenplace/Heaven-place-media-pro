@@ -15,6 +15,7 @@ export default function LivePlayer({ session, onEnded }) {
   const [status, setStatus] = useState('idle');
   const [error, setError] = useState('');
   const [seconds, setSeconds] = useState(0);
+  const [blocked, setBlocked] = useState(false);
 
   const audio = String(session?.mime || '').startsWith('audio');
 
@@ -22,6 +23,7 @@ export default function LivePlayer({ session, onEnded }) {
     setStarted(false);
     setStatus('idle');
     setError('');
+    setBlocked(false);
   }, [session?.id]);
 
   useEffect(() => {
@@ -36,8 +38,15 @@ export default function LivePlayer({ session, onEnded }) {
     let queue = [];
     let flushing = false;
     let closed = false;
+    let fellBack = false;
 
     const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+    // A browser that refuses to start playback on its own leaves the listener looking at a
+    // still frame, so say so instead of leaving them to guess.
+    const tryPlay = () => {
+      el.play().catch(() => setBlocked(true));
+    };
 
     const seekToLiveEdge = () => {
       try {
@@ -56,8 +65,8 @@ export default function LivePlayer({ session, onEnded }) {
       flushing = true;
       try {
         sourceBuffer.appendBuffer(queue.shift());
-      } catch (err) {
-        setError(err.message);
+      } catch {
+        useFallback();
         return;
       }
       sourceBuffer.onupdateend = () => {
@@ -75,10 +84,24 @@ export default function LivePlayer({ session, onEnded }) {
       };
     };
 
+    // A buffer that refuses the stream — a phone that recorded no picture, say — must not
+    // leave a black player: the recording itself still plays, so hand that to the element.
     const useFallback = () => {
+      if (fellBack) return;
+      fellBack = true;
+      cancelled = true; // stop following the live edge; the file is what plays from here
       setStatus('fallback');
       el.src = `/uploads/live/${session.id}.${String(session.mime).includes('mp4') ? 'mp4' : 'webm'}`;
-      el.play().catch(() => {});
+      tryPlay();
+    };
+
+    // The element fires this when the live buffer fails — and again if the recording itself
+    // is one this browser cannot decode, which is worth saying rather than showing black.
+    const onElementError = () => {
+      if (cancelled) return;
+      if (!fellBack) return useFallback();
+      setError('This broadcast cannot be played in this browser.');
+      setStatus('error');
     };
 
     const run = async () => {
@@ -87,6 +110,7 @@ export default function LivePlayer({ session, onEnded }) {
         setStatus('connecting');
         mediaSource = new MediaSource();
         el.src = URL.createObjectURL(mediaSource);
+        el.addEventListener('error', onElementError);
         await new Promise((resolve) => {
           mediaSource.addEventListener('sourceopen', resolve, { once: true });
           el.addEventListener('loadedmetadata', resolve, { once: true });
@@ -98,7 +122,7 @@ export default function LivePlayer({ session, onEnded }) {
           return useFallback();
         }
         setStatus('live');
-        el.play().catch(() => {});
+        tryPlay();
 
         while (!cancelled && !closed) {
           const manifest = await api(`/live/${session.id}/manifest`);
@@ -144,6 +168,7 @@ export default function LivePlayer({ session, onEnded }) {
     run();
     return () => {
       cancelled = true;
+      el.removeEventListener('error', onElementError);
       try {
         if (mediaSource?.readyState === 'open') mediaSource.endOfStream();
       } catch {
@@ -177,6 +202,7 @@ export default function LivePlayer({ session, onEnded }) {
         {status === 'fallback' && <span>Playing the recording — this browser cannot follow the live edge.</span>}
         {status === 'ended' && <span>This broadcast has ended.</span>}
         {seconds > 0 && status === 'live' && <span>{Math.floor(seconds / 60)}:{String(seconds % 60).padStart(2, '0')} in</span>}
+        {blocked && !error && <span>Press play to start the stream.</span>}
         {error && <span className="notice notice-error tiny">{error}</span>}
       </div>
     </div>
