@@ -281,19 +281,37 @@ export async function ensureSchema() {
 }
 
 export async function ensureAdmin() {
-  const email = process.env.ADMIN_EMAIL || 'admin@streamcast.pro';
-  const password = process.env.ADMIN_PASSWORD || 'control-room';
-  const { rows } = await q('SELECT id, role FROM users WHERE email = $1', [email]);
-  if (rows.length) {
-    // The main control-room account is whatever ADMIN_EMAIL names. If that address was
-    // already registered as an ordinary listener, promote it; leave its password alone.
-    if (rows[0].role !== 'admin') await q("UPDATE users SET role = 'admin' WHERE id = $1", [rows[0].id]);
+  const address = String(process.env.ADMIN_EMAIL || 'admin@streamcast.pro').trim();
+  const password = String(process.env.ADMIN_PASSWORD || 'control-room');
+  // Looked up the way login looks it up (trimmed, case-insensitive), so the control room
+  // always lands on one account and never a second near-duplicate of it.
+  const { rows } = await q(
+    'SELECT id, role, password_hash, password_set FROM users WHERE lower(email) = lower($1)',
+    [address]
+  );
+  if (!rows.length) {
+    await q(
+      'INSERT INTO users (email, password_hash, name, role, tier, password_set) VALUES ($1, $2, $3, $4, $5, true)',
+      [address, await bcrypt.hash(password, 10), 'Control Room', 'admin', 'premium']
+    );
     return;
   }
-  await q(
-    'INSERT INTO users (email, password_hash, name, role, tier, password_set) VALUES ($1, $2, $3, $4, $5, true)',
-    [email, await bcrypt.hash(password, 10), 'Control Room', 'admin', 'premium']
-  );
+  // The main control-room account is whatever ADMIN_EMAIL names. If that address was
+  // already registered as an ordinary listener — or signed in with Google, which stores an
+  // unguessable hash — it is promoted here.
+  if (rows[0].role !== 'admin') await q("UPDATE users SET role = 'admin' WHERE id = $1", [rows[0].id]);
+  // ADMIN_PASSWORD is this account's password. A new value uploaded to the dashboard has to
+  // reach the account (the platform recreates the service; this runs on boot), and an
+  // address that already existed carries a hash its owner may not know — a Google sign-up
+  // has no usable password at all. Without this the control room can lock itself out for
+  // good, because the app has no password-reset route.
+  if (!rows[0].password_set || !(await bcrypt.compare(password, rows[0].password_hash))) {
+    await q('UPDATE users SET password_hash = $1, password_set = true WHERE id = $2', [
+      await bcrypt.hash(password, 10),
+      rows[0].id
+    ]);
+    console.log('[api] control-room password taken from ADMIN_PASSWORD');
+  }
 }
 
 // Demo content so a fresh install has something on air. Only runs on an empty database.

@@ -43,6 +43,16 @@
       "name": "PRCPAY_WEBHOOK_IPS",
       "description": "Comma-separated source addresses PrcPay's settlement notifications come from. Notifications carry no signature, so this allowlist is the whole check — without it POST /api/prcpay/webhook refuses every caller (403).",
       "requiredAtBoot": false
+    },
+    {
+      "name": "ADMIN_EMAIL",
+      "description": "The address you sign in to the control room with. An address already in the app (a listener registration or a Google sign-up) is promoted to admin; a new one is created on boot. Left unset, the app falls back to admin@streamcast.pro.",
+      "requiredAtBoot": false
+    },
+    {
+      "name": "ADMIN_PASSWORD",
+      "description": "The control-room password — the sign-in form wants at least 8 characters. Upload a value you know: on boot the control-room account's password is set to what is stored here, which is also the way back in if that password is lost (the app has no password-reset route). Left unset, the app falls back to control-room.",
+      "requiredAtBoot": false
     }
   ]
 }

@@ -119,16 +119,23 @@ Left to do on the host, none of which lives in the repository:
 The main control-room account is whatever `ADMIN_EMAIL` names, with `ADMIN_PASSWORD` as
 its password. Both are app secrets delivered in `/run/base44/app.env` (outside the repo);
 `.env.base44-defaults` only carries the `admin@streamcast.pro` / `control-room` fallback
-used when no secret is set.
+used when no secret is set. **While the secrets are set that sample is not a working
+sign-in**, and `ensureAdmin()` is the only thing that decides which address and password
+work — so "Incorrect email or password" means the combination being typed is not the one
+the secrets hold.
 
 - On start, `ensureAdmin()` (`api/db.js`) creates that address as `role = 'admin'`,
-  `tier = 'premium'`.
+  `tier = 'premium'`, with `ADMIN_PASSWORD` as its password.
 - If the address **already exists** — someone registered it as a listener, or signed in
-  with Google — it is promoted to `admin` but keeps its own password. A Google-created
-  account has no password its owner knows until one is set, which is what the Android apps
-  need (they sign in with email + password only). Sign in with Google and set one from
-  `/account`; only if that is impossible, do it by hand:
-  `UPDATE users SET password_hash = <bcryptjs hash of ADMIN_PASSWORD>, password_set = true`.
+  with Google — it is promoted to `admin`, and its password is replaced with
+  `ADMIN_PASSWORD` whenever the stored hash no longer verifies it (`password_set` becomes
+  true at the same time). A Google-created account has no password its owner knows; this is
+  what gives it one, which is what the Android apps need (they sign in with email + password
+  only).
+- That is also the way back in: upload a new `ADMIN_PASSWORD` and the recreated api service
+  sets it on the next boot, so a control room locked out of its own account recovers that
+  way. Changing the password from `/account` is undone at the next boot — for this one
+  account the secret is authoritative.
 
 Everyone else registers from `/register`. Access levels: a listener account can own
 stations and use the studio (`/studio`, which only ever shows its own stations); `/admin`
