@@ -1,5 +1,6 @@
 package pro.streamcast.core
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
@@ -17,6 +18,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -200,13 +202,28 @@ fun RowText(title: String, subtitle: String?, modifier: Modifier = Modifier) {
 }
 
 @Composable
-fun PrimaryButton(text: String, enabled: Boolean = true, onClick: () -> Unit) {
+fun PrimaryButton(text: String, enabled: Boolean = true, modifier: Modifier = Modifier, onClick: () -> Unit) {
     Button(
         onClick = onClick,
         enabled = enabled,
-        modifier = Modifier.fillMaxWidth().height(46.dp),
+        modifier = modifier.fillMaxWidth().height(46.dp),
         shape = RoundedCornerShape(12.dp),
         colors = ButtonDefaults.buttonColors(containerColor = Brand.accent, contentColor = Color.White)
+    ) {
+        Text(text, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+    }
+}
+
+/** The quiet button beside a primary one — the studio's "Start camera". */
+@Composable
+fun SecondaryButton(text: String, enabled: Boolean = true, modifier: Modifier = Modifier, onClick: () -> Unit) {
+    OutlinedButton(
+        onClick = onClick,
+        enabled = enabled,
+        modifier = modifier.fillMaxWidth().height(46.dp),
+        shape = RoundedCornerShape(12.dp),
+        border = BorderStroke(1.dp, Brand.line),
+        colors = ButtonDefaults.outlinedButtonColors(contentColor = Brand.text)
     ) {
         Text(text, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
     }

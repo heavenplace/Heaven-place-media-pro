@@ -8,9 +8,11 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -29,6 +31,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -42,18 +45,22 @@ import pro.streamcast.core.Notice
 import pro.streamcast.core.Pill
 import pro.streamcast.core.PrimaryButton
 import pro.streamcast.core.QUALITY_PRESETS
+import pro.streamcast.core.SecondaryButton
 import pro.streamcast.core.Station
 import pro.streamcast.core.TextInput
 import pro.streamcast.core.qualityPreset
 
 /**
  * "Go live from this phone" — the studio's own broadcast, with the camera and the microphone
- * as the source. It offers the same settings the web studio and the control room do — the live
- * title, the window and the quality the station broadcasts at — and opens on the pair the
- * station already remembers, so a station set up at 1080p on the website records at 1080p here.
+ * as the source. It is the web studio's own panel, screen for screen: the stage first (the
+ * picture the viewers will get, or "Camera is off — start it below"), then the live title, the
+ * window and the quality the station broadcasts at — offered as the same choices the web studio
+ * and the control room do, opening on the pair the station already remembers, so a station set
+ * up at 1080p on the website records at 1080p here.
  *
  * It asks for the permissions it needs, opens the session and hands the recording over to
- * [LiveBroadcast]; the panel then shows the picture going out and what has been sent.
+ * [LiveBroadcast]; the stage keeps showing the picture going out, and the panel says what has
+ * been sent.
  *
  * This is the native counterpart of the web studio's LiveBroadcaster: same session, same chunk
  * endpoint, same growing file, so a broadcast started here is watched on the website and in
@@ -77,7 +84,12 @@ fun PhoneGoLive(station: Station, notify: (String) -> Unit, fail: (String) -> Un
         scope.launch { runCatching { Api.patch("/stations/${station.id}/stream", body) } }
     }
 
-    val permissions = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { granted ->
+    // Starting the stage only needs the camera; going live needs the microphone too.
+    val cameraPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { granted ->
+        if (granted.values.all { it }) LiveBroadcast.startCamera()
+        else fail("The camera is needed to show the picture you are about to broadcast.")
+    }
+    val goLivePermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { granted ->
         if (granted.values.all { it }) {
             rememberSettings()
             LiveBroadcast.start(
@@ -102,6 +114,8 @@ fun PhoneGoLive(station: Station, notify: (String) -> Unit, fail: (String) -> Un
     }
 
     val live = LiveBroadcast.live
+    val previewing = LiveBroadcast.previewing
+    val facing = LiveBroadcast.facing
     val mb = "%.1f".format(LiveBroadcast.bytes / 1048576.0)
 
     Column(
@@ -115,11 +129,11 @@ fun PhoneGoLive(station: Station, notify: (String) -> Unit, fail: (String) -> Un
                 fontWeight = FontWeight.Bold,
                 modifier = Modifier.weight(1f)
             )
-            if (live) LiveBadge() else Pill("Device off air")
+            if (live) LiveBadge() else Pill("Camera idle")
         }
         Text(
-            "This phone is the source: the camera and microphone record and go straight to " +
-                "${station.name}, and listeners follow along live. Keep the studio open while you broadcast.",
+            "Broadcast straight from this device — it is the source. Start the camera, switch " +
+                "between the front and back one, and choose how long the window runs.",
             color = Brand.muted,
             fontSize = 11.5.sp,
             modifier = Modifier.padding(top = 4.dp)
@@ -133,54 +147,15 @@ fun PhoneGoLive(station: Station, notify: (String) -> Unit, fail: (String) -> Un
             return
         }
 
-        TextInput(title, { title = it }, "Live title")
-
-        Text("Quality", color = Brand.muted, fontSize = 11.sp, modifier = Modifier.padding(top = 8.dp))
-        Row(
-            Modifier.fillMaxWidth().padding(top = 4.dp).horizontalScroll(rememberScrollState()),
-            horizontalArrangement = Arrangement.spacedBy(6.dp)
+        // The stage: the picture going out, or the step the owner takes to start it. The camera's
+        // own surface only sits here once it is open — an empty one paints black over the line
+        // that tells the owner what to do.
+        Box(
+            Modifier.fillMaxWidth().padding(top = 10.dp).height(190.dp)
+                .clip(RoundedCornerShape(10.dp)).background(Brand.panel2),
+            contentAlignment = Alignment.Center
         ) {
-            QUALITY_PRESETS.forEach { option ->
-                Chip(option.label, quality == option.key) {
-                    if (!live) {
-                        quality = option.key
-                        rememberSettings()
-                    }
-                }
-            }
-        }
-
-        Text("How long", color = Brand.muted, fontSize = 11.sp, modifier = Modifier.padding(top = 8.dp))
-        Row(
-            Modifier.fillMaxWidth().padding(top = 4.dp).horizontalScroll(rememberScrollState()),
-            horizontalArrangement = Arrangement.spacedBy(6.dp)
-        ) {
-            WINDOWS.forEach { (value, label) ->
-                Chip(label, window == value) {
-                    if (!live) {
-                        window = value
-                        rememberSettings()
-                    }
-                }
-            }
-        }
-        Spacer(Modifier.height(8.dp))
-
-        if (!live) {
-            PrimaryButton(
-                text = if (LiveBroadcast.busy) "Starting…" else "Go live from this phone",
-                enabled = !LiveBroadcast.busy
-            ) {
-                val needed = if (video) {
-                    arrayOf(Manifest.permission.CAMERA, Manifest.permission.RECORD_AUDIO)
-                } else {
-                    arrayOf(Manifest.permission.RECORD_AUDIO)
-                }
-                permissions.launch(needed)
-            }
-        } else {
-            // The camera's own preview: what the panel shows is the picture going out.
-            if (video) {
+            if (video && previewing) {
                 AndroidView(
                     factory = { ctx ->
                         SurfaceView(ctx).apply {
@@ -199,16 +174,98 @@ fun PhoneGoLive(station: Station, notify: (String) -> Unit, fail: (String) -> Un
                             })
                         }
                     },
-                    modifier = Modifier.fillMaxWidth().height(190.dp).clip(RoundedCornerShape(10.dp))
+                    modifier = Modifier.fillMaxSize()
                 )
+            } else {
                 Text(
-                    "This is the picture your viewers see.",
+                    if (video) "Camera is off — start it below" else "🎙️ Audio only — the microphone is the source",
                     color = Brand.muted,
-                    fontSize = 11.sp,
-                    modifier = Modifier.padding(top = 6.dp)
+                    fontSize = 12.sp,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.padding(horizontal = 16.dp)
                 )
             }
+        }
+        if (video && previewing) {
+            Text(
+                if (live) "You are looking at what your viewers see right now."
+                else "This is the picture your viewers will see.",
+                color = Brand.muted,
+                fontSize = 11.sp,
+                modifier = Modifier.padding(top = 6.dp)
+            )
+        }
 
+        TextInput(title, { title = it }, "Live title")
+
+        Text("How long", color = Brand.muted, fontSize = 11.sp, modifier = Modifier.padding(top = 8.dp))
+        Row(
+            Modifier.fillMaxWidth().padding(top = 4.dp).horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            WINDOWS.forEach { (value, label) ->
+                Chip(label, window == value) {
+                    if (!live) {
+                        window = value
+                        rememberSettings()
+                    }
+                }
+            }
+        }
+
+        Text("Quality", color = Brand.muted, fontSize = 11.sp, modifier = Modifier.padding(top = 8.dp))
+        Row(
+            Modifier.fillMaxWidth().padding(top = 4.dp).horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            QUALITY_PRESETS.forEach { option ->
+                Chip(option.label, quality == option.key) {
+                    if (!live) {
+                        quality = option.key
+                        rememberSettings()
+                        // A microphone-only preset has no picture, so the stage's camera goes.
+                        if (option.audioOnly) LiveBroadcast.releaseCamera()
+                    }
+                }
+            }
+        }
+        Spacer(Modifier.height(10.dp))
+
+        if (!live) {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (video) {
+                    if (!previewing) {
+                        SecondaryButton(
+                            text = if (LiveBroadcast.busy) "Starting…" else "Start camera",
+                            enabled = !LiveBroadcast.busy,
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            cameraPermission.launch(arrayOf(Manifest.permission.CAMERA))
+                        }
+                    } else {
+                        SecondaryButton(
+                            text = "Switch to ${if (facing == "environment") "front" else "back"} camera",
+                            enabled = !LiveBroadcast.busy,
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            LiveBroadcast.switchCamera()
+                        }
+                    }
+                }
+                PrimaryButton(
+                    text = if (LiveBroadcast.busy) "Starting…" else "Go live",
+                    enabled = !LiveBroadcast.busy,
+                    modifier = Modifier.weight(1f)
+                ) {
+                    val needed = if (video) {
+                        arrayOf(Manifest.permission.CAMERA, Manifest.permission.RECORD_AUDIO)
+                    } else {
+                        arrayOf(Manifest.permission.RECORD_AUDIO)
+                    }
+                    goLivePermission.launch(needed)
+                }
+            }
+        } else {
             PrimaryButton(text = if (LiveBroadcast.busy) "Ending…" else "End broadcast", enabled = !LiveBroadcast.busy) {
                 LiveBroadcast.stop(notify, fail)
             }
@@ -219,6 +276,14 @@ fun PhoneGoLive(station: Station, notify: (String) -> Unit, fail: (String) -> Un
                 modifier = Modifier.padding(top = 6.dp)
             )
         }
+
+        Text(
+            "Keep this screen open while you broadcast — the recording is kept and appears as a " +
+                "Relive item when you end.",
+            color = Brand.muted,
+            fontSize = 10.5.sp,
+            modifier = Modifier.padding(top = 10.dp)
+        )
 
         LiveBroadcast.error?.let { Notice(it, Brand.live) }
     }

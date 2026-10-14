@@ -38,6 +38,12 @@ import java.io.RandomAccessFile
  * the session is therefore always video/webm or audio/webm, which is also what decides the
  * file's extension on the server and the type every viewer keys off.
  *
+ * The stage comes first, the broadcast after it: `startCamera` opens the chosen lens and paints
+ * it on the studio's surface, so the owner sees what is about to go out and can turn it round
+ * to the other camera, and only then does "Go live" hand that same camera to the recorder —
+ * the web studio's own order. A stage the owner never started is opened at the moment the
+ * broadcast begins.
+ *
  * Unlike the browser, recording here needs no wake lock: the recorder and this loop live in an
  * app-wide object, so the broadcast survives the studio screen being recomposed or its tab being
  * switched. It is ended when the owner stops it by hand or leaves the studio, and the API's own
@@ -56,6 +62,14 @@ object LiveBroadcast {
     var bytes by mutableStateOf(0L)
         private set
     var error by mutableStateOf<String?>(null)
+        private set
+
+    /** A camera is open and painting on the stage — before going live, or while it is on air. */
+    var previewing by mutableStateOf(false)
+        private set
+
+    /** The camera the owner picked: "environment" is the back one, "user" the front. */
+    var facing by mutableStateOf("environment")
         private set
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -88,11 +102,16 @@ object LiveBroadcast {
             try {
                 val target = File(app.cacheDir, "live-${System.currentTimeMillis()}.webm")
                 val format = if (video) "video/webm;codecs=vp8,opus" else "audio/webm;codecs=opus"
+                // A radio preset has no picture, so a stage the owner had started is let go
+                // before the microphone-only recorder is built.
+                if (!video) stopCamera()
                 // The recorder is built before the session, so a device that refuses the
-                // camera fails before anything is put on air.
-                val opened = openRecorder(app, target, preset)
+                // camera fails before anything is put on air. A camera already open on the
+                // stage is the one it records with, so going live does not open the lens twice.
+                val opened = openRecorder(app, target, preset, if (video) camera else null)
                 recorder = opened.first
                 camera = opened.second
+                previewing = video && camera != null
                 showPreview()
 
                 val body = JSONObject()
@@ -123,6 +142,57 @@ object LiveBroadcast {
                 busy = false
             }
         }
+    }
+
+    /**
+     * Open the camera on the studio's stage without recording — the step before "Go live", so
+     * the owner sees the picture that is about to go out. Best-effort: a device that refuses a
+     * preview still records when the broadcast starts.
+     */
+    fun startCamera() {
+        if (live || busy || previewing) return
+        if (!supported) {
+            error = "Broadcasting from this phone needs Android 10 or newer."
+            return
+        }
+        busy = true
+        error = null
+        scope.launch {
+            try {
+                openCamera(facing)
+            } catch (failure: Exception) {
+                previewing = false
+                error = "Could not reach the camera: ${failure.message ?: "it refused"}"
+            } finally {
+                busy = false
+            }
+        }
+    }
+
+    /** Turn the stage round to the other camera — the front/back switch the web studio offers. */
+    fun switchCamera() {
+        if (live || busy) return
+        facing = if (facing == "environment") "user" else "environment"
+        busy = true
+        scope.launch {
+            try {
+                openCamera(facing)
+            } catch (failure: Exception) {
+                previewing = false
+                error = "Could not reach the camera: ${failure.message ?: "it refused"}"
+            } finally {
+                busy = false
+            }
+        }
+    }
+
+    /**
+     * Let the stage's camera go: leaving the studio releases it, and so does picking the
+     * audio-only preset. A broadcast that is still running keeps the camera it records with.
+     */
+    fun releaseCamera() {
+        if (live) return
+        scope.launch { stopCamera() }
     }
 
     /** End the broadcast by hand, and say so — what it recorded stays on the station. */
@@ -219,18 +289,59 @@ object LiveBroadcast {
         }
     }
 
+    /** The camera device for the chosen side, or whichever one this phone has. */
+    @Suppress("DEPRECATION")
+    private fun cameraIdFor(side: String): Int {
+        val info = Camera.CameraInfo()
+        for (id in 0 until Camera.getNumberOfCameras()) {
+            Camera.getCameraInfo(id, info)
+            if (side == "user" && info.facing == Camera.CameraInfo.CAMERA_FACING_FRONT) return id
+            if (side == "environment" && info.facing == Camera.CameraInfo.CAMERA_FACING_BACK) return id
+        }
+        return 0
+    }
+
+    /** Open the chosen camera and paint it on the studio's stage. */
+    @SuppressLint("MissingPermission")
+    @Suppress("DEPRECATION")
+    private fun openCamera(side: String) {
+        stopCamera()
+        val device = Camera.open(cameraIdFor(side)) ?: throw IllegalStateException("this phone has no camera")
+        camera = device
+        previewing = true
+        showPreview()
+    }
+
+    @Suppress("DEPRECATION")
+    private fun stopCamera() {
+        stopPreview()
+        runCatching { camera?.release() }
+        camera = null
+        previewing = false
+    }
+
     // The legacy Camera and its MediaRecorder hooks are deprecated but are the only ones whose
     // recording works the same with or without a preview surface, which is what a broadcast from
     // a screen the owner may close wants.
     @SuppressLint("MissingPermission")
     @Suppress("DEPRECATION")
-    private fun openRecorder(context: Context, target: File, preset: QualityPreset): Pair<MediaRecorder, Camera?> {
+    private fun openRecorder(
+        context: Context,
+        target: File,
+        preset: QualityPreset,
+        existing: Camera? = null
+    ): Pair<MediaRecorder, Camera?> {
         val video = !preset.audioOnly
         val recorder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) MediaRecorder(context) else MediaRecorder()
         var opened: Camera? = null
         try {
             if (video) {
-                val device = Camera.open() ?: throw IllegalStateException("this phone has no camera")
+                val device = existing ?: Camera.open(cameraIdFor(facing))
+                    ?: throw IllegalStateException("this phone has no camera")
+                // The recorder takes the camera while it records; the stage's preview is put back
+                // on the same device once the recorder is prepared, exactly as the web
+                // broadcaster keeps painting the canvas it streams.
+                if (existing != null) stopPreview()
                 device.unlock()
                 opened = device
                 recorder.setCamera(device)
@@ -267,7 +378,7 @@ object LiveBroadcast {
         }
     }
 
-    /** The studio's preview surface — the picture the viewers are getting, as it is sent. */
+    /** The studio's stage — the picture the viewers are getting, as it is sent. */
     fun attachPreview(holder: SurfaceHolder) {
         preview = holder
         showPreview()
@@ -298,10 +409,8 @@ object LiveBroadcast {
 
     @Suppress("DEPRECATION")
     private fun release() {
-        stopPreview()
         runCatching { recorder?.release() }
         recorder = null
-        runCatching { camera?.release() }
-        camera = null
+        stopCamera()
     }
 }

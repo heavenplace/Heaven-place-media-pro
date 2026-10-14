@@ -116,7 +116,7 @@ fun StudioScreen(onOpenLicence: () -> Unit = {}) {
 
     // A broadcast started here ends when the owner leaves the studio — the same way closing
     // the web studio's page does — and the API archives it as a Relive item either way.
-    DisposableEffect(Unit) { onDispose { LiveBroadcast.endOnExit() } }
+    DisposableEffect(Unit) { onDispose { LiveBroadcast.endOnExit(); LiveBroadcast.releaseCamera() } }
 
     Column(Modifier.fillMaxSize()) {
         Column(Modifier.fillMaxWidth().background(Brand.bg).padding(horizontal = 14.dp)) {
@@ -495,7 +495,6 @@ private fun LiveTab(
     }
 
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(14.dp)) {
-        item { SectionTitle("Go live from this phone") }
         item { PhoneGoLive(station, notify, fail, reload) }
 
         item { SectionTitle("Go live on ${station.name}") }

@@ -547,7 +547,13 @@ docker compose -f docker-compose.mobile.yml run --rm android
     panel says so and offers the published-item window instead. The recorder is built before
     the session, so a device that refuses the camera fails before anything goes on air; the
     broadcast ends when the owner stops it or leaves the studio, and the API's sweep archives
-    it either way. The panel offers the same live title, window and quality choices as the web
+    it either way. The stage comes first, as it does on the web: `startCamera()` opens the chosen
+    lens (`facing` — "environment" or "user") and paints it on the studio's surface before
+    anything is on air, the front/back switch turns it round, and "Go live" hands that same
+    camera to the recorder instead of opening the lens twice. The surface is composed only once
+    a camera is open — an empty one paints black over the "Camera is off — start it below" line
+    — leaving the studio releases it (`releaseCamera()`), and so does picking the audio-only
+    preset. The panel offers the same live title, window and quality choices as the web
     studio (`QUALITY_PRESETS` in `core/.../LiveSettings.kt`), writes the chosen pair back to
     the station through `PATCH /api/stations/:id/stream` and shows the camera's own preview
     while it is live (`LiveBroadcast.attachPreview`) — best-effort throughout, so a device
