@@ -80,6 +80,35 @@ const upload = multer({
   }
 });
 
+/**
+ * The file behind a url this app stored itself, or null for anything else. Seeded demo
+ * media and pasted links are remote urls with no file here, and a url that does not resolve
+ * inside the upload directory (`..` in it, say) is not one of ours either.
+ */
+function storedFile(url) {
+  if (typeof url !== 'string' || !url.startsWith('/uploads/')) return null;
+  const root = path.resolve(UPLOAD_DIR);
+  const file = path.resolve(root, url.slice('/uploads/'.length));
+  return file.startsWith(root + path.sep) ? file : null;
+}
+
+/**
+ * Remove the file an item was published from, so that deleting the item deletes the
+ * recording or the upload with it. Best effort: a file that is already gone is not an
+ * error, and a remote url is left alone.
+ */
+export async function removeStoredFile(url) {
+  const file = storedFile(url);
+  if (!file) return false;
+  try {
+    await fs.promises.unlink(file);
+    return true;
+  } catch (error) {
+    if (error.code !== 'ENOENT') console.warn('[api] could not remove an uploaded file:', file, error.message);
+    return false;
+  }
+}
+
 const router = express.Router();
 
 router.post('/', upload.single('file'), (req, res) => {

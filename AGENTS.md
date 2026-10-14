@@ -452,6 +452,19 @@ key — a placeholder only makes the app start, it does not take money.
     existing `media.visible = false`, which is what takes it out of the listener app, and
     **restore** puts it back. Every action is written to the activity feed as `moderate`.
   - `DELETE /api/admin/media/:id` removes the item for good, with a confirmation in the UI.
+- **Deleting a published item takes the file with it, and neither the live desk nor the
+  recording sweep puts it back.** `DELETE /api/media/:id` and `DELETE /api/admin/media/:id`
+  both go through `removeMedia` (`api/mediaCleanup.js`): the row, the file behind its
+  `/uploads/...` url (`removeStoredFile` in `api/uploads.js` — a pasted link or one of the
+  seeded samples has no local file), a live window still *on air* over the item is closed, and
+  the session's `recording_url` is cleared. That last one matters: `sweepLiveRecordings()`
+  archives every ended broadcast whose `recording_url` is not in `media`, so a deleted **Relive
+  capture** would otherwise be re-created by the next sweep. A sale keeps its amount
+  (`earnings.media_id`) and a window keeps its history (`live_sessions.media_id`) — both keys
+  are `ON DELETE SET NULL`. Entitlements and access requests cascade away with the item. The
+  controls are the studio's Media tab (owner), the control room's Moderation desk (admin), and
+  **the Delete on a card in the media library** (`web/src/pages/Library.jsx`), which is shown
+  only to the item's station owner and to admins — a listener's card has no Delete at all.
   - Only admins: `/api/admin/*` is behind `router.use(auth({ admin: true }))`, and the
     studio never shows these controls.
 - **Active listeners** is a 5-minute rolling count of `listen` activity rows;

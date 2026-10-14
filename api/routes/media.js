@@ -2,6 +2,7 @@ import express from 'express';
 import { q } from '../db.js';
 import { auth } from '../auth.js';
 import { canManageStation, hasDownloadEntitlement, isPremium, logActivity, standardPlanStation } from '../guards.js';
+import { removeMedia } from '../mediaCleanup.js';
 
 const router = express.Router();
 
@@ -99,14 +100,16 @@ router.patch('/:id', auth(), async (req, res) => {
   res.json({ media: rows[0] });
 });
 
+// The item and the file it was published from both go; `removeMedia` closes a live window
+// still on air over it and stops the recording sweep re-archiving it (see `mediaCleanup.js`).
 router.delete('/:id', auth(), async (req, res) => {
   const mediaId = Number(req.params.id);
-  const { rows: found } = await q('SELECT station_id FROM media WHERE id = $1', [mediaId]);
+  const { rows: found } = await q('SELECT id, station_id, url FROM media WHERE id = $1', [mediaId]);
   if (!found.length) return res.status(404).json({ error: 'Media not found' });
   if (!(await canManageStation(req.user, found[0].station_id))) {
     return res.status(403).json({ error: 'Only the station owner or an admin can delete this media' });
   }
-  await q('DELETE FROM media WHERE id = $1', [mediaId]);
+  await removeMedia(found[0]);
   res.status(204).end();
 });
 

@@ -49,7 +49,9 @@ export function StationCard({ station, onOpen }) {
   );
 }
 
-export function MediaRow({ item, onPlay, onChanged }) {
+// `onDelete` is passed only by the pages that let this account manage the item (its station's
+// owner, or an admin) — the listener-facing cards simply do not get one.
+export function MediaRow({ item, onPlay, onChanged, onDelete }) {
   const art = `https://picsum.photos/seed/media${item.id}/200/200`;
   return (
     <div className="media-card">
@@ -69,6 +71,9 @@ export function MediaRow({ item, onPlay, onChanged }) {
           <button className="btn btn-sm btn-primary" onClick={() => onPlay(item)}>Play</button>
           {item.downloadable && (
             <DownloadButton item={item} onChanged={onChanged} />
+          )}
+          {onDelete && (
+            <button className="btn btn-sm btn-danger" onClick={() => onDelete(item)}>Delete</button>
           )}
         </div>
       </div>

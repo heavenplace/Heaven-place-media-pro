@@ -3,6 +3,7 @@ import { q } from '../db.js';
 import { auth } from '../auth.js';
 import { logActivity } from '../guards.js';
 import { saveRecording } from './live.js';
+import { removeMedia } from '../mediaCleanup.js';
 import { PAYMENT_METHODS, withAmounts } from '../payments.js';
 
 const router = express.Router();
@@ -176,11 +177,13 @@ router.post('/media/:id/moderate', async (req, res) => {
 
 router.delete('/media/:id', async (req, res) => {
   const { rows } = await q(
-    'SELECT m.id, m.title, m.station_id, s.name AS station_name FROM media m JOIN stations s ON s.id = m.station_id WHERE m.id = $1',
+    'SELECT m.id, m.title, m.station_id, m.url, s.name AS station_name FROM media m JOIN stations s ON s.id = m.station_id WHERE m.id = $1',
     [req.params.id]
   );
   if (!rows.length) return res.status(404).json({ error: 'That content has already been removed' });
-  await q('DELETE FROM media WHERE id = $1', [rows[0].id]);
+  // Same removal as the studio's own Delete: the row, the file behind it, and the live
+  // window or stale recording reference that would otherwise bring it back.
+  await removeMedia(rows[0]);
   await logActivity(req.user.id, 'moderate', `${req.user.name} removed ${rows[0].title} from ${rows[0].station_name}`, rows[0].station_id);
   res.status(204).end();
 });

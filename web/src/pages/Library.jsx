@@ -1,15 +1,21 @@
 import { useEffect, useState } from 'react';
 import { api } from '../api.js';
+import { useAuth } from '../AuthContext.jsx';
 import { usePlayer } from '../components/Player.jsx';
 import { Empty, MediaRow } from '../components/Cards.jsx';
 
 export default function Library() {
   const { play } = usePlayer();
+  const { user } = useAuth();
   const [media, setMedia] = useState([]);
   const [type, setType] = useState('');
   const [access, setAccess] = useState('');
   const [query, setQuery] = useState('');
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  // The stations this account owns, so an owner can delete on their own items here as well
+  // as in the studio. An admin may delete anything; the API scopes the same way.
+  const [mine, setMine] = useState([]);
 
   const load = () => {
     setLoading(true);
@@ -23,6 +29,27 @@ export default function Library() {
   };
 
   useEffect(load, [type, access, query]);
+
+  useEffect(() => {
+    if (!user) return setMine([]);
+    api('/stations/mine')
+      .then((data) => setMine(data.stations.map((station) => station.id)))
+      .catch(() => setMine([]));
+  }, [user]);
+
+  const canDelete = (item) => user?.role === 'admin' || mine.includes(item.station_id);
+
+  // Deletes the item and the file it was published from — an upload or a Relive recording.
+  const remove = async (item) => {
+    if (!window.confirm(`Delete "${item.title}"?`)) return;
+    setError('');
+    try {
+      await api(`/media/${item.id}`, { method: 'DELETE' });
+      load();
+    } catch (err) {
+      setError(err.message);
+    }
+  };
 
   return (
     <div className="stack" style={{ gap: 20 }}>
@@ -49,6 +76,8 @@ export default function Library() {
         </div>
       </div>
 
+      {error && <div className="notice notice-error">{error}</div>}
+
       {loading ? (
         <div className="empty">Loading…</div>
       ) : media.length === 0 ? (
@@ -61,6 +90,7 @@ export default function Library() {
               item={item}
               onPlay={(m) => play({ id: m.id, title: m.title, subtitle: m.station_name, type: m.type, url: m.url, artwork: m.station_artwork })}
               onChanged={load}
+              onDelete={canDelete(item) ? remove : undefined}
             />
           ))}
         </div>
