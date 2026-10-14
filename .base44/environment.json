@@ -51,7 +51,7 @@
     },
     {
       "name": "ADMIN_PASSWORD",
-      "description": "The control-room password — the sign-in form wants at least 8 characters. Upload a value you know: on boot the control-room account's password is set to what is stored here, which is also the way back in if that password is lost (the app has no password-reset route). Left unset, the app falls back to control-room.",
+      "description": "The control-room password — the sign-in form wants at least 8 characters. Upload a value you know: on boot the control-room account's password is set to what is stored here, which is also the way back in if that password is lost (the app has no password-reset route). Do not use the '$' character: a dollar sign is mangled on its way from here into the app, so the account would receive a password that is not the one you typed (letters, digits and punctuation such as ! - _ # are safe). Left unset, the app falls back to control-room.",
       "requiredAtBoot": false
     }
   ]

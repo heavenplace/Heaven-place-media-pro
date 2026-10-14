@@ -136,6 +136,17 @@ the secrets hold.
   sets it on the next boot, so a control room locked out of its own account recovers that
   way. Changing the password from `/account` is undone at the next boot — for this one
   account the secret is authoritative.
+- **Never put a `$` in `ADMIN_PASSWORD`.** The platform writes the value double-quoted
+  into `/run/base44/app.env` and compose interpolates the contents on the way in, so `$$`
+  reaches the process as a single `$` and `$name` as nothing at all: the account ends up
+  with a password that is not the one that was typed, and every sign-in is refused with
+  "Incorrect email or password". Verified with a probe — `x1$$y2` reaches the process as
+  `x1$y2` when the value is unquoted or double-quoted, while single quotes keep it intact.
+  Letters, digits and other punctuation (`!`, `-`, `_`, `#`) survive untouched, so pick the
+  password from those.
+- After a secret is uploaded the api service has to be **recreated** to re-read the file —
+  `docker compose -f docker-compose.base44.yml up -d --force-recreate api` — because a
+  plain `up -d` leaves the container on its old environment.
 
 Everyone else registers from `/register`. Access levels: a listener account can own
 stations and use the studio (`/studio`, which only ever shows its own stations); `/admin`
