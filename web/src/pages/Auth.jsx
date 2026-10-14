@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../AuthContext.jsx';
 import { GoogleSignInGate } from '../components/GoogleSignIn.jsx';
+import { cleanEmailInput } from '../email.js';
 
 export default function Auth({ mode }) {
   const { login, register, user } = useAuth();
@@ -73,7 +74,7 @@ export default function Auth({ mode }) {
         )}
         <div>
           <label>Email</label>
-          <input type="email" value={form.email} onChange={(event) => setForm({ ...form, email: event.target.value })} required />
+          <input type="email" value={form.email} onChange={(event) => setForm({ ...form, email: cleanEmailInput(event.target.value) })} required />
         </div>
         <div>
           <label>Password</label>

@@ -648,6 +648,10 @@ the check script's fault, not the app's:
   `docker compose -f docker-compose.base44.yml exec -T db psql -U streamcast -d streamcast ...`.
 - `activity` has no `title` column; it is `type` + `detail`, and `live_sessions` has
   `started_at`, not `created_at`.
+- `station_applications` has no `contact_email` column — the applicant's address is the
+  joined `users.email` (`SELECT a.*, u.email AS user_email …`). A
+  `SELECT …, contact_email, … FROM station_applications` shows as
+  `ERROR: column "contact_email" does not exist` in the `db` log while the app is fine.
 - `users` has no `user_id` column — its key is `id`, and `user_id` is the foreign key
   pointing at it on the child tables (`activity`, `favorites`, `entitlements`,
   `payout_accounts`, `payouts`, …). A `SELECT id, user_id, … FROM users` shows as
