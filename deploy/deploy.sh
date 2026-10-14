@@ -11,6 +11,10 @@
 # deploy/Caddyfile). The sandbox dev stack (docker-compose.base44.yml) is a different
 # thing and is never touched from here.
 #
+# On a fresh VM (an Oracle Cloud Always Free instance, say), read deploy/oracle/README.md
+# first: the provider's firewall and the machine's own both have to let 80 and 443 through,
+# or the stack comes up healthy and unreachable.
+#
 # What it cannot do, because it needs you or the app's own dashboards:
 #   - fill in .env.prod — a first run writes it from deploy/.env.prod.example and stops
 #   - the DNS record and the Let's Encrypt challenge (the preflight only warns)
@@ -49,6 +53,37 @@ set -a
 set +a
 
 say "using $ENV_FILE (site address: ${SITE_ADDRESS:-unset})"
+
+# --- 2b. a name to publish on ------------------------------------------------
+# A fresh VM (an Oracle Cloud Always Free instance, say) has no public hostname, but
+# SITE_ADDRESS has to be a name that resolves here before Caddy can get a certificate for
+# it. Left blank, fall back to `<public ip>.sslip.io` — a free name that resolves to
+# whichever IP it is asked about, and that Let's Encrypt issues for. The shell environment
+# wins over --env-file in compose's interpolation, so exporting is enough.
+if [ -z "${SITE_ADDRESS:-}" ] || [ -z "${PUBLIC_ORIGIN:-}" ]; then
+  ip="${PUBLIC_IP:-}"
+  if [ -z "$ip" ]; then
+    for url in https://api.ipify.org https://ifconfig.me/ip https://icanhazip.com; do
+      ip="$(curl -fsS -m 10 "$url" 2>/dev/null || true)"
+      case "$ip" in *[!0-9.]*) ip="" ;; *) [ -n "$ip" ] && break ;; esac
+    done
+  fi
+  if [ -n "$ip" ]; then
+    SITE_ADDRESS="${SITE_ADDRESS:-$ip.sslip.io}"
+    PUBLIC_ORIGIN="${PUBLIC_ORIGIN:-https://$SITE_ADDRESS}"
+    export SITE_ADDRESS PUBLIC_ORIGIN
+    say "no name in $ENV_FILE — publishing on $SITE_ADDRESS (sslip.io resolves to $ip)"
+    say "         set SITE_ADDRESS and PUBLIC_ORIGIN there to publish on your own domain instead"
+
+    # Record it, so the name (and the certificate) stays the same on the next run and the
+    # other scripts that read this file — migrate-data.sh among them — see a real value.
+    tmp="$(mktemp)"
+    sed -e "s|^SITE_ADDRESS=.*|SITE_ADDRESS=$SITE_ADDRESS|" \
+        -e "s|^PUBLIC_ORIGIN=.*|PUBLIC_ORIGIN=$PUBLIC_ORIGIN|" "$ENV_FILE" > "$tmp"
+    cat "$tmp" > "$ENV_FILE"
+    rm -f "$tmp"
+  fi
+fi
 
 missing=()
 for name in SITE_ADDRESS PUBLIC_ORIGIN POSTGRES_PASSWORD JWT_SECRET ADMIN_EMAIL ADMIN_PASSWORD; do
@@ -120,7 +155,8 @@ if code="$(curl -sS -m 20 -o /dev/null -w '%{http_code}' "http://$SITE_ADDRESS/"
   say "$SITE_ADDRESS answers (HTTP $code) — the site is live"
 else
   say "the stack is up on this host, but $SITE_ADDRESS did not answer"
-  say "usually the DNS record still points elsewhere, or ports 80/443 are closed at the firewall"
+  say "usually the DNS record still points elsewhere, or ports 80/443 are closed — on a cloud"
+  say "VM that means both the provider's firewall and the machine's own (deploy/oracle/README.md)"
   say "Caddy keeps retrying the certificate on its own once the name resolves here"
 fi
 

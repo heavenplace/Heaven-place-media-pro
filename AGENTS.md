@@ -60,9 +60,35 @@ real accounts, so it stays out of the repo.
 
 ### This app's deployment
 
-The production subdomain is **`streamcastpro.ct.ws`**. `deploy/.env.prod.example` already
-carries it (`SITE_ADDRESS=streamcastpro.ct.ws`, `PUBLIC_ORIGIN=https://streamcastpro.ct.ws`),
-so the copy only needs its passwords filled in — those two lines are not values to change.
+The production host is an **Oracle Cloud Always Free VM** — an Ampere A1 instance (up to
+4 OCPUs / 24 GB, free), which is a machine with root that runs Docker, and that is the
+whole requirement. `deploy/oracle/README.md` is the step-by-step;
+`deploy/oracle/vm-setup.sh` prepares a fresh VM (Docker, the host firewall, swap) and
+`deploy/oracle/cloud-init.yaml` is the Docker half of it at instance-creation time.
+
+- **Oracle Cloud blocks a port twice.** The VCN's security list filters it on the cloud
+  side (console only — ingress TCP 80 and 443 from `0.0.0.0/0`), and the VM's own firewall
+  drops it again: the Oracle Linux images keep iptables rules that accept SSH and reject
+  the rest, reloaded at boot. `vm-setup.sh` does the host half. Miss either one and the
+  site answers on the VM itself and nowhere else.
+- **ARM (aarch64) needs nothing special here.** `node:22-alpine`, `caddy:2-alpine` and
+  `postgres:16-alpine` all publish arm64, `api/` has no native dependencies, and the web
+  lockfile carries the arm64 `rollup` and `esbuild` builds. The Android toolchain
+  (`docker-compose.mobile.yml`, `mobile/Dockerfile`) is x86-64 only — build the APKs on a
+  desktop and copy them in.
+- **There is no name to point at the VM, and `streamcastpro.ct.ws` cannot be used.** Left
+  blank, `deploy/deploy.sh` fills `SITE_ADDRESS`/`PUBLIC_ORIGIN` in as
+  `<public ip>.sslip.io` — a free name that resolves to whichever IP it is asked about and
+  that Let's Encrypt issues for — writes it into `.env.prod` (so the name and the
+  certificate stay put, and `migrate-data.sh` reads a real value) and says so. A domain you
+  own, or a free DuckDNS subdomain, is the permanent answer: put the bare name and the same
+  name with its scheme in `.env.prod` and point its A record here first.
+
+**Why not `streamcastpro.ct.ws`.** That name resolves to InfinityFree's free shared hosting
+(185.27.134.101), and both halves of that are a dead end: the plan is PHP + MySQL served
+from an `/htdocs` directory — no Node process, no Postgres, no Docker, no shell access, and
+no long-running process at all, so it cannot host this stack — and `ct.ws` is InfinityFree's
+own domain, served from their nameservers, so the account cannot repoint it at a VM either.
 
 `deploy/deploy.sh` is the one command that does the rest on the host:
 
@@ -74,35 +100,19 @@ in, and it refuses to start while any required value is still a `change-me` plac
 Its DNS preflight is a warning, not a stop: Caddy keeps retrying the certificate on its
 own once the name resolves here.
 
-**Do not deploy this stack to `streamcastpro.ct.ws` as it stands.** That name resolves to
-InfinityFree's free shared hosting (185.27.134.101), and both halves of that are a dead end:
-
-- **The plan cannot run the app.** InfinityFree's free hosting is PHP + MySQL served from an
-  `/htdocs` directory: no Node process, no Postgres, no Docker, no shell access, and no
-  long-running process at all — their own forum states that a 24/7 background process is
-  "not something you would find in real free hosting". Premium does not change this, so it
-  cannot host the API either.
-- **The address cannot be repointed either.** `ct.ws` is InfinityFree's own domain, served
-  from their nameservers, so an A record pointing this name at a VPS is not something the
-  account controls.
-
-A deployment therefore needs (a) a machine that runs Docker, and (b) a hostname whose DNS
-its owner controls. For a first live test `<host ip>.sslip.io` is a free name that resolves
-to that IP and Let's Encrypt will issue for; a registered domain is the real answer. Until
-one of those exists, leave `SITE_ADDRESS`/`PUBLIC_ORIGIN` at whatever name actually resolves
-to the host — `deploy/deploy.sh` warns when the name does not point at the machine it runs on.
-
 Left to do on the host, none of which lives in the repository:
 
-- Point an A record for `streamcastpro.ct.ws` at the host and open ports 80 and 443
-  **before the first start** — Caddy asks Let's Encrypt for a certificate for exactly that
-  name, and the challenge only passes once the name resolves there.
-- Add `https://streamcastpro.ct.ws` to the Google OAuth client's authorized JavaScript
-  origins, and point the Stripe webhook at
-  `https://streamcastpro.ct.ws/api/payments/webhook`.
+- Open ingress TCP 80 and 443 in the VCN's security list, and open the same two in the
+  VM's own firewall (`sudo ./deploy/oracle/vm-setup.sh`), **before the first start** —
+  Caddy asks Let's Encrypt for a certificate for exactly `SITE_ADDRESS`, and the challenge
+  only passes once that name resolves here and the port is reachable from the internet.
+- Reserve the instance's public IP (Instances → the instance → Attached VNICs → the VNIC →
+  Edit → Reserved public IP), so the name published on keeps pointing here after a stop.
+- Add the deployed origin to the Google OAuth client's authorized JavaScript origins, and
+  point the Stripe webhook at `https://<name>/api/payments/webhook`.
 - Rebuild the APKs against the deployed origin before building the web image, or the
   download buttons 404 (they are git-ignored build output):
-  `API_BASE_URL=https://streamcastpro.ct.ws docker compose -f docker-compose.mobile.yml run --rm android`.
+  `API_BASE_URL=https://<name> docker compose -f docker-compose.mobile.yml run --rm android`.
 
 ## Sign in
 
