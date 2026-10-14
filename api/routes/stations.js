@@ -109,6 +109,40 @@ router.patch('/:id', auth(), async (req, res) => {
   res.json({ station: rows[0] });
 });
 
+// The settings a station goes live with — the quality it broadcasts at and the window its
+// go-live form opens with. Kept off PATCH /:id so picking a quality is not an "edit" in the
+// activity feed: the studio, the control room and the Android studio all write this pair,
+// and every one of them reads it back off the station row.
+const QUALITIES = ['audio', '720p', '1080p', '1080p60', '4k'];
+const LIVE_WINDOWS = ['1', '4', '12', '24', 'permanent'];
+
+router.patch('/:id/stream', auth(), async (req, res) => {
+  const stationId = Number(req.params.id);
+  if (!(await canManageStation(req.user, stationId))) {
+    return res.status(403).json({ error: 'Only the station owner or an admin can edit this station' });
+  }
+
+  const sets = [];
+  const params = [];
+  if (req.body?.quality !== undefined) {
+    const quality = String(req.body.quality);
+    if (!QUALITIES.includes(quality)) return res.status(400).json({ error: 'That is not a broadcast quality this app offers' });
+    params.push(quality);
+    sets.push(`stream_quality = $${params.length}`);
+  }
+  if (req.body?.window !== undefined) {
+    const window = String(req.body.window);
+    if (!LIVE_WINDOWS.includes(window)) return res.status(400).json({ error: 'That is not a live window this app offers' });
+    params.push(window);
+    sets.push(`stream_window = $${params.length}`);
+  }
+  if (!sets.length) return res.status(400).json({ error: 'Nothing to update' });
+
+  params.push(stationId);
+  const { rows } = await q(`UPDATE stations SET ${sets.join(', ')} WHERE id = $${params.length} RETURNING *`, params);
+  res.json({ station: rows[0] });
+});
+
 router.delete('/:id', auth({ admin: true }), async (req, res) => {
   await q('DELETE FROM stations WHERE id = $1', [req.params.id]);
   res.status(204).end();

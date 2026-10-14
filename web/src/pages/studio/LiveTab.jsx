@@ -2,14 +2,7 @@ import { useState } from 'react';
 import { api } from '../../api.js';
 import { Empty, LiveBadge } from '../../components/Cards.jsx';
 import LiveBroadcaster from '../../components/LiveBroadcaster.jsx';
-
-const WINDOWS = [
-  ['1', '1 hour'],
-  ['4', '4 hours'],
-  ['12', '12 hours'],
-  ['24', '24 hours'],
-  ['permanent', '24/7 — never ends']
-];
+import { WINDOWS, stationWindow, rememberStreamSettings } from '../../liveSettings.js';
 
 const isForever = (session) => Boolean(session.permanent) || !session.expires_at;
 
@@ -25,8 +18,15 @@ const remaining = (session) => {
 };
 
 export default function LiveTab({ station, media, live, reload, notify, fail }) {
-  const [form, setForm] = useState({ media_id: '', title: '', duration: '1' });
+  // The window the station was last set up with, so every station opens on its own choice
+  // rather than always starting at one hour.
+  const [form, setForm] = useState({ media_id: '', title: '', duration: stationWindow(station) });
   const [busy, setBusy] = useState(false);
+
+  const changeWindow = (next) => {
+    setForm({ ...form, duration: next });
+    rememberStreamSettings(station.id, { window: next });
+  };
 
   const goLive = async (event) => {
     event.preventDefault();
@@ -44,7 +44,7 @@ export default function LiveTab({ station, media, live, reload, notify, fail }) 
           ...(forever ? { permanent: true } : { hours: Number(form.duration) })
         }
       });
-      setForm({ media_id: '', title: '', duration: '1' });
+      setForm({ ...form, media_id: '', title: '' });
       notify(forever ? 'On air 24/7 — every listener sees it immediately.' : 'On air — every listener sees it immediately.');
       reload();
     } catch (err) {
@@ -107,7 +107,7 @@ export default function LiveTab({ station, media, live, reload, notify, fail }) 
           </div>
           <div style={{ minWidth: 190 }}>
             <label>How long</label>
-            <select value={form.duration} onChange={(event) => setForm({ ...form, duration: event.target.value })}>
+            <select value={form.duration} onChange={(event) => changeWindow(event.target.value)}>
               {WINDOWS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
             </select>
           </div>

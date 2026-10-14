@@ -40,9 +40,17 @@ data class Station(
     val verified: Boolean,
     val owner: String?,
     val mediaCount: Int,
-    val live: Boolean
+    val live: Boolean,
+    val streamQuality: String?,
+    val streamWindow: String?
 ) {
     val isTv: Boolean get() = kind == "tv"
+
+    /** What this station goes live with — the pair the website's studio offers it. */
+    val quality: String
+        get() = streamQuality?.takeIf { key -> QUALITY_PRESETS.any { it.key == key } } ?: if (isTv) "1080p" else "audio"
+
+    val window: String get() = streamWindow?.takeIf { it in LIVE_WINDOW_KEYS } ?: "1"
 }
 
 data class MediaItem(
@@ -194,7 +202,9 @@ fun stationOf(row: JSONObject) = Station(
     verified = row.optBoolean("verified"),
     owner = row.text("owner_name"),
     mediaCount = row.optInt("media_count"),
-    live = row.optBoolean("is_live")
+    live = row.optBoolean("is_live"),
+    streamQuality = row.text("stream_quality"),
+    streamWindow = row.text("stream_window")
 )
 
 fun mediaOf(row: JSONObject) = MediaItem(

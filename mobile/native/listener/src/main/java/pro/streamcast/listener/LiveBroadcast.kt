@@ -5,6 +5,7 @@ import android.content.Context
 import android.hardware.Camera
 import android.media.MediaRecorder
 import android.os.Build
+import android.view.SurfaceHolder
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -18,7 +19,9 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import org.json.JSONObject
 import pro.streamcast.core.Api
+import pro.streamcast.core.QualityPreset
 import pro.streamcast.core.Station
+import pro.streamcast.core.qualityPreset
 import java.io.File
 import java.io.RandomAccessFile
 
@@ -63,14 +66,21 @@ object LiveBroadcast {
     private var sessionId: Int? = null
     private var mime: String = ""
     private var sent: Long = 0
+    private var preview: SurfaceHolder? = null
 
-    /** Open a session, start recording, and begin sending slices. */
-    fun start(context: Context, station: Station, title: String, video: Boolean, window: String) {
+    /**
+     * Open a session, start recording, and begin sending slices. `quality` is the key the
+     * station remembers — the same list the web studio offers — and decides whether there is
+     * a picture at all and how large it is.
+     */
+    fun start(context: Context, station: Station, title: String, window: String, quality: String) {
         if (live || busy) return
         if (!supported) {
             error = "Broadcasting from this phone needs Android 10 or newer."
             return
         }
+        val preset = qualityPreset(quality)
+        val video = !preset.audioOnly
         busy = true
         error = null
         val app = context.applicationContext
@@ -80,9 +90,10 @@ object LiveBroadcast {
                 val format = if (video) "video/webm;codecs=vp8,opus" else "audio/webm;codecs=opus"
                 // The recorder is built before the session, so a device that refuses the
                 // camera fails before anything is put on air.
-                val opened = openRecorder(app, target, video)
+                val opened = openRecorder(app, target, preset)
                 recorder = opened.first
                 camera = opened.second
+                showPreview()
 
                 val body = JSONObject()
                     .put("station_id", station.id)
@@ -208,11 +219,13 @@ object LiveBroadcast {
         }
     }
 
-    // The legacy Camera and its MediaRecorder hooks are deprecated but are the only ones that
-    // record without a preview surface, which is what a headless broadcast wants.
+    // The legacy Camera and its MediaRecorder hooks are deprecated but are the only ones whose
+    // recording works the same with or without a preview surface, which is what a broadcast from
+    // a screen the owner may close wants.
     @SuppressLint("MissingPermission")
     @Suppress("DEPRECATION")
-    private fun openRecorder(context: Context, target: File, video: Boolean): Pair<MediaRecorder, Camera?> {
+    private fun openRecorder(context: Context, target: File, preset: QualityPreset): Pair<MediaRecorder, Camera?> {
+        val video = !preset.audioOnly
         val recorder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) MediaRecorder(context) else MediaRecorder()
         var opened: Camera? = null
         try {
@@ -226,17 +239,26 @@ object LiveBroadcast {
             if (video) recorder.setVideoSource(MediaRecorder.VideoSource.CAMERA)
             recorder.setOutputFormat(MediaRecorder.OutputFormat.WEBM)
             recorder.setAudioEncoder(MediaRecorder.AudioEncoder.OPUS)
-            recorder.setAudioEncodingBitRate(96_000)
+            recorder.setAudioEncodingBitRate(preset.audioBits)
             if (video) {
                 recorder.setVideoEncoder(MediaRecorder.VideoEncoder.VP8)
-                // 480p is the size every camera in this range can hand a recorder; a
-                // broadcast is bounded by the phone's connection long before its sensor.
+                recorder.setVideoSize(preset.width, preset.height)
+                recorder.setVideoFrameRate(preset.frameRate)
+                recorder.setVideoEncodingBitRate(preset.videoBits)
+            }
+            recorder.setOutputFile(target.absolutePath)
+            try {
+                recorder.prepare()
+            } catch (refused: Exception) {
+                if (!video) throw refused
+                // A camera that will not hand the recorder the size the preset asks for — a 4K
+                // or 60fps sensor, say — falls back to 480p rather than refusing to go live,
+                // the way the web studio's "ideal" constraints do.
                 recorder.setVideoSize(640, 480)
                 recorder.setVideoFrameRate(30)
                 recorder.setVideoEncodingBitRate(1_500_000)
+                recorder.prepare()
             }
-            recorder.setOutputFile(target.absolutePath)
-            recorder.prepare()
             return recorder to opened
         } catch (failure: Exception) {
             runCatching { recorder.release() }
@@ -245,8 +267,38 @@ object LiveBroadcast {
         }
     }
 
+    /** The studio's preview surface — the picture the viewers are getting, as it is sent. */
+    fun attachPreview(holder: SurfaceHolder) {
+        preview = holder
+        showPreview()
+    }
+
+    fun detachPreview() {
+        preview = null
+        stopPreview()
+    }
+
+    // Best-effort throughout: a device that refuses a preview still records.
+    @Suppress("DEPRECATION")
+    private fun showPreview() {
+        val device = camera ?: return
+        val holder = preview ?: return
+        runCatching {
+            device.setPreviewDisplay(holder)
+            device.startPreview()
+        }
+    }
+
+    @Suppress("DEPRECATION")
+    private fun stopPreview() {
+        val device = camera ?: return
+        runCatching { device.stopPreview() }
+        runCatching { device.setPreviewDisplay(null) }
+    }
+
     @Suppress("DEPRECATION")
     private fun release() {
+        stopPreview()
         runCatching { recorder?.release() }
         recorder = null
         runCatching { camera?.release() }

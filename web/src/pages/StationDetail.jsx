@@ -5,14 +5,7 @@ import { useAuth } from '../AuthContext.jsx';
 import { usePlayer } from '../components/Player.jsx';
 import { Empty, LiveBadge, MediaRow } from '../components/Cards.jsx';
 import LivePlayer from '../components/LivePlayer.jsx';
-
-const WINDOWS = [
-  ['1', '1 hour'],
-  ['4', '4 hours'],
-  ['12', '12 hours'],
-  ['24', '24 hours'],
-  ['permanent', '24/7 — never ends']
-];
+import { WINDOWS } from '../liveSettings.js';
 
 export default function StationDetail() {
   const { id } = useParams();

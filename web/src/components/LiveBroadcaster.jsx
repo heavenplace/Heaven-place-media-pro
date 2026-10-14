@@ -1,17 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { api, getToken } from '../api.js';
-
-/**
- * Capture presets. Constraints are sent as "ideal" so a phone that cannot do the
- * requested size falls back to the closest thing its camera supports.
- */
-const QUALITY = {
-  audio: { label: 'Audio only (FM / radio)', audioOnly: true, audioBitsPerSecond: 192000 },
-  '720p': { label: 'HD 720p · 30fps', size: [1280, 720], frameRate: 30, videoBitsPerSecond: 3500000, audioBitsPerSecond: 128000 },
-  '1080p': { label: 'Full HD 1080p · 30fps', size: [1920, 1080], frameRate: 30, videoBitsPerSecond: 6000000, audioBitsPerSecond: 192000 },
-  '1080p60': { label: 'Full HD 1080p · 60fps', size: [1920, 1080], frameRate: 60, videoBitsPerSecond: 9000000, audioBitsPerSecond: 192000 },
-  '4k': { label: '4K 2160p · 30fps', size: [3840, 2160], frameRate: 30, videoBitsPerSecond: 16000000, audioBitsPerSecond: 256000 }
-};
+import { QUALITY, WINDOWS, stationQuality, stationWindow, rememberStreamSettings } from '../liveSettings.js';
 
 const MIME_CANDIDATES = {
   video: [
@@ -26,14 +15,6 @@ const MIME_CANDIDATES = {
   ],
   audio: ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4;codecs=mp4a.40.2', 'audio/mp4']
 };
-
-const WINDOWS = [
-  ['1', '1 hour'],
-  ['4', '4 hours'],
-  ['12', '12 hours'],
-  ['24', '24 hours'],
-  ['permanent', '24/7 — never ends']
-];
 
 /**
  * End the session from the way out. `keepalive` lets the request survive the page being
@@ -92,9 +73,11 @@ export default function LiveBroadcaster({ station, onStarted, onEnded, notify, f
   const wakeLockRef = useRef(null);
 
   const [facing, setFacing] = useState('environment');
-  const [quality, setQuality] = useState(station.kind === 'tv' ? '1080p' : 'audio');
+  // A station goes live with the settings it was last set up with, whether the owner or the
+  // control room picked them — and whether that was on the web or on a phone.
+  const [quality, setQuality] = useState(() => stationQuality(station));
   const [title, setTitle] = useState('');
-  const [duration, setDuration] = useState('1');
+  const [duration, setDuration] = useState(() => stationWindow(station));
   const [previewing, setPreviewing] = useState(false);
   const [live, setLive] = useState(false);
   const [permanent, setPermanent] = useState(false);
@@ -102,6 +85,13 @@ export default function LiveBroadcaster({ station, onStarted, onEnded, notify, f
   const [error, setError] = useState('');
   const [stats, setStats] = useState(null);
   const [online, setOnline] = useState(1);
+
+  // Moving to another station must not carry the previous station's settings into this
+  // station's go-live form.
+  useEffect(() => {
+    setQuality(stationQuality(station));
+    setDuration(stationWindow(station));
+  }, [station.id, station.stream_quality, station.stream_window]);
 
   const preset = QUALITY[quality] || QUALITY['1080p'];
   const audioOnly = Boolean(preset.audioOnly);
@@ -351,7 +341,13 @@ export default function LiveBroadcaster({ station, onStarted, onEnded, notify, f
 
   const changeQuality = async (next) => {
     setQuality(next);
+    rememberStreamSettings(station.id, { quality: next });
     if (previewing && !live) await openSource(facing, next);
+  };
+
+  const changeDuration = (next) => {
+    setDuration(next);
+    rememberStreamSettings(station.id, { window: next });
   };
 
   return (
@@ -394,7 +390,7 @@ export default function LiveBroadcaster({ station, onStarted, onEnded, notify, f
         </div>
         <div style={{ minWidth: 190 }}>
           <label>How long</label>
-          <select value={duration} onChange={(event) => setDuration(event.target.value)} disabled={live}>
+          <select value={duration} onChange={(event) => changeDuration(event.target.value)} disabled={live}>
             {WINDOWS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
           </select>
         </div>

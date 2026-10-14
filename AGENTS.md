@@ -246,6 +246,20 @@ key — a placeholder only makes the app start, it does not take money.
   creator starts their own show; only an admin may assign one to another account) and
   `POST /api/podcasts/:id/episodes` (owner or admin). Episodes are recorded on the phone
   or uploaded through the same `FileDrop.jsx` as media.
+- **A station's streaming settings are one pair of columns, shared by every place it goes
+  live from.** `stations.stream_quality` (`audio` | `720p` | `1080p` | `1080p60` | `4k`)
+  and `stations.stream_window` (the same `1`/`4`/`12`/`24`/`permanent` keys the go-live
+  form offers) are written by `PATCH /api/stations/:id/stream` (`api/routes/stations.js`,
+  owner or admin) and read back off the station row, so all three go-live surfaces open on
+  the same choices: the owner's studio (`LiveBroadcaster.jsx`, and the window in
+  `LiveTab.jsx`), the control room's live desk (`web/src/pages/admin/Live.jsx`, which also
+  mounts the same broadcaster for whichever station the admin picks) and the Android
+  studio. The vocabulary lives in `web/src/liveSettings.js` and, mirrored,
+  `mobile/native/core/.../LiveSettings.kt` — adding a preset means both. A station with no
+  saved pair falls back to `1080p` for a TV station and `audio` for a radio one, one hour.
+  The route is deliberately separate from `PATCH /:id` so picking a quality is not a
+  `station_update` entry in the activity feed, and saving it is best-effort: a failed write
+  never stops a broadcast.
 - **Live** has two shapes, both rows in `live_sessions`:
   - a *window* over an item that was already published — a set duration (1/4/12/24 hours)
     or `permanent = true` for 24/7. An open-ended window stores no `expires_at`, so every
@@ -531,7 +545,12 @@ docker compose -f docker-compose.mobile.yml run --rm android
     panel says so and offers the published-item window instead. The recorder is built before
     the session, so a device that refuses the camera fails before anything goes on air; the
     broadcast ends when the owner stops it or leaves the studio, and the API's sweep archives
-    it either way.
+    it either way. The panel offers the same live title, window and quality choices as the web
+    studio (`QUALITY_PRESETS` in `core/.../LiveSettings.kt`), writes the chosen pair back to
+    the station through `PATCH /api/stations/:id/stream` and shows the camera's own preview
+    while it is live (`LiveBroadcast.attachPreview`) — best-effort throughout, so a device
+    that refuses a preview still records. A camera that will not hand the recorder the size a
+    preset asks for falls back to 480p rather than refusing to go live.
   - **Still web-only**: premium checkout/downloads, access-request approvals and the APK
     download page.
 - **`JSONObject.optString` turns a JSON null into the string `"null"`** on Android, which

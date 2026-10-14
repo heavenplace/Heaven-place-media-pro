@@ -243,6 +243,11 @@ ALTER TABLE live_sessions ALTER COLUMN expires_at DROP NOT NULL;
 -- 'standard' stations publish free content; 'premium' (the $15 licence) may also
 -- publish premium and paid items and earn from what listeners buy.
 ALTER TABLE stations ADD COLUMN IF NOT EXISTS plan text NOT NULL DEFAULT 'standard';
+-- What a station goes live with: the quality it broadcasts at and the window its go-live
+-- form opens with. The studio, the control room and the Android studio all read and write
+-- this same pair, so every station goes live with the settings its owner last chose.
+ALTER TABLE stations ADD COLUMN IF NOT EXISTS stream_quality text;
+ALTER TABLE stations ADD COLUMN IF NOT EXISTS stream_window text;
 -- The licence fee paid to one of the control room's payment accounts, with the proof.
 ALTER TABLE station_applications ADD COLUMN IF NOT EXISTS payment_account_id integer REFERENCES payment_accounts(id) ON DELETE SET NULL;
 ALTER TABLE station_applications ADD COLUMN IF NOT EXISTS currency text;
