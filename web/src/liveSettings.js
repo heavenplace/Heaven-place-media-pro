@@ -29,8 +29,13 @@ export const WINDOWS = [
 export const QUALITY_KEYS = Object.keys(QUALITY);
 export const WINDOW_KEYS = WINDOWS.map(([value]) => value);
 
-/** What a station goes live with until its owner picks something else. */
-export const defaultQuality = (kind) => (kind === 'tv' ? '1080p' : 'audio');
+/**
+ * What a station goes live with until its owner picks something else. Every station — FM or
+ * TV — opens on the camera broadcast, the go-live screen Metro TV has: the owner picks the
+ * front or back camera and watches the picture that is going out. "Audio only (FM / radio)"
+ * stays in the list for a microphone-only broadcast.
+ */
+export const defaultQuality = () => '1080p';
 
 /** The quality a station remembers, falling back to the default for its kind. */
 export const stationQuality = (station) =>

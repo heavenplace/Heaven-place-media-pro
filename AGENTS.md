@@ -256,7 +256,9 @@ key — a placeholder only makes the app start, it does not take money.
   mounts the same broadcaster for whichever station the admin picks) and the Android
   studio. The vocabulary lives in `web/src/liveSettings.js` and, mirrored,
   `mobile/native/core/.../LiveSettings.kt` — adding a preset means both. A station with no
-  saved pair falls back to `1080p` for a TV station and `audio` for a radio one, one hour.
+  saved pair opens on `1080p` whatever its kind — every owner gets the camera stage Metro TV
+  has, with the front/back switch and the picture that is going out — and one hour. "Audio
+  only (FM / radio)" is still a preset an owner can pick.
   The route is deliberately separate from `PATCH /:id` so picking a quality is not a
   `station_update` entry in the activity feed, and saving it is best-effort: a failed write
   never stops a broadcast.
@@ -536,7 +538,7 @@ docker compose -f docker-compose.mobile.yml run --rm android
     manual transfer-proof upload stay web-only.
   - **Going live from the phone works here too.** `LiveBroadcast.kt` is the native counterpart
     of the web studio's broadcaster: `MediaRecorder` writes a WebM file in the app cache
-    (VP8 + Opus, or Opus alone for a radio station) and every couple of seconds
+    (VP8 + Opus, or Opus alone when the owner picks the audio-only preset) and every couple of seconds
     `PhoneBroadcast.kt` posts whatever the recorder appended since the last slice to
     `POST /api/live/:id/chunk` — the same endpoint, and the same growing file the website's
     `LiveBroadcaster.jsx`, the web `LivePlayer` and the native viewer all follow. WebM is the

@@ -46,9 +46,13 @@ data class Station(
 ) {
     val isTv: Boolean get() = kind == "tv"
 
-    /** What this station goes live with — the pair the website's studio offers it. */
+    /**
+     * What this station goes live with — the pair the website's studio offers it. Every
+     * station, FM or TV, opens on the camera broadcast, the same go-live screen the web
+     * studio gives it; "Audio only (FM / radio)" stays a choice for a microphone-only one.
+     */
     val quality: String
-        get() = streamQuality?.takeIf { key -> QUALITY_PRESETS.any { it.key == key } } ?: if (isTv) "1080p" else "audio"
+        get() = streamQuality?.takeIf { key -> QUALITY_PRESETS.any { it.key == key } } ?: "1080p"
 
     val window: String get() = streamWindow?.takeIf { it in LIVE_WINDOW_KEYS } ?: "1"
 }
