@@ -178,6 +178,23 @@ the secrets hold.
   other one with "Incorrect email or password" for good, however often they retried; register
   no longer creates a second row (it checks `lower(email)`), so this is what a legacy pair
   still needs.
+- **The lookup normalises the stored address too, not just the typed one.** All three
+  address lookups (sign-in, register's duplicate check, Google sign-in) compare
+  `lower(<address with the invisible characters and stray spaces stripped>)` against the
+  typed address — `NORMALIZED_EMAIL` in `api/routes/auth.js`. Normalising only the input
+  cleans what is written from then on, but leaves every row stored *before* that
+  unmatchable: its owner was still refused whatever they typed. Those legacy rows are found
+  now, and register refuses to create a near-duplicate beside one.
+- **An account with no password says so, instead of "Incorrect email or password".** A
+  Google-created account has `password_set = false` and an unguessable hash, so no typed
+  password can ever match it; the generic refusal left its owner with nothing to act on, and
+  the Android apps have no Google flow at all, so that account could never be opened there.
+  When every row carrying the address is password-less, sign-in answers 401 with the way
+  out: sign in with Google on the web and set a password under `/account`, or ask the
+  control room for a temporary one. The control room's Users tab marks such an account
+  "none yet (Google)" beside its **New password** button. The cost is that this one message
+  confirms an address has an account; it is deliberate — a silent dead end is what produced
+  the "nobody can sign in" reports.
 - **The control room can issue a new password for any account**
   (`POST /api/admin/users/:id/password`, the Users tab's "New password"), which is the
   listener's counterpart of re-uploading `ADMIN_PASSWORD` and the only way back in for an

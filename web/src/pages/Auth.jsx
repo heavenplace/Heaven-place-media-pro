@@ -78,11 +78,14 @@ export default function Auth({ mode }) {
         </div>
         <div>
           <label>Password</label>
+          {/* Only creating an account has a minimum length: on sign-in the browser's own
+              check silently refused to submit a shorter legacy password, which looks like a
+              broken form. The server decides instead. */}
           <input
             type="password"
             value={form.password}
             onChange={(event) => setForm({ ...form, password: event.target.value })}
-            minLength={8}
+            minLength={isRegister ? 8 : undefined}
             required
           />
         </div>

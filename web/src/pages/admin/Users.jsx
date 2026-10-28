@@ -97,6 +97,9 @@ export default function Users() {
                   <td className="small muted">{user.last_seen ? timeAgo(user.last_seen) : 'never'}</td>
                   <td className="small muted">{new Date(user.created_at).toLocaleDateString()}</td>
                   <td>
+                    {/* A Google sign-up carries no password its owner knows, so it cannot
+                        sign in to the apps until one is issued or set on the web. */}
+                    {!user.password_set ? <div className="tiny muted">none yet (Google)</div> : null}
                     <button className="btn btn-sm" type="button" onClick={() => resetPassword(user)}>
                       New password
                     </button>

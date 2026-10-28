@@ -192,7 +192,7 @@ router.delete('/media/:id', async (req, res) => {
 
 router.get('/users', async (_req, res) => {
   const { rows } = await q(
-    `SELECT u.id, u.email, u.name, u.role, u.tier, u.created_at,
+    `SELECT u.id, u.email, u.name, u.role, u.tier, u.created_at, u.password_set,
        (SELECT count(*)::int FROM entitlements e WHERE e.user_id = u.id) AS unlocks,
        (SELECT max(created_at) FROM activity a WHERE a.user_id = u.id) AS last_seen
      FROM users u ORDER BY u.created_at DESC LIMIT 300`
