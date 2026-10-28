@@ -46,8 +46,8 @@ export default function Auth({ mode }) {
       <div className="panel stack" style={{ maxWidth: 460 }}>
         <h1>Reset your password</h1>
         <p className="muted small">
-          Password resets are handled by the app's mail provider. Send the address you signed up with to the
-          control room and they will issue a reset link.
+          There is no reset email. Send the address you signed up with to the control room and they will issue
+          a new password for the account, which you can change at Account once you are signed in.
         </p>
         <Link className="btn" to="/login">Back to sign in</Link>
       </div>

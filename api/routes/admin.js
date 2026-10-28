@@ -1,4 +1,6 @@
 import express from 'express';
+import bcrypt from 'bcryptjs';
+import { randomBytes } from 'node:crypto';
 import { q } from '../db.js';
 import { auth } from '../auth.js';
 import { logActivity } from '../guards.js';
@@ -218,6 +220,28 @@ router.patch('/users/:id', async (req, res) => {
   if (!rows.length) return res.status(404).json({ error: 'User not found' });
   await logActivity(req.user.id, 'user_update', `${req.user.name} updated ${rows[0].name} (${rows[0].role}/${rows[0].tier})`);
   res.json({ user: rows[0] });
+});
+
+// Issue a new password for an account that cannot sign in — the listener's counterpart of
+// re-uploading ADMIN_PASSWORD, and the only way back in for an owner who has forgotten
+// theirs: there is no mail provider here, so no reset link can be sent. The control room
+// hands the new password to the owner out of band and the owner changes it at /account.
+// base64url is letters, digits, '-' and '_' only: nothing a shell, a compose file or a
+// secret pipeline gets to mangle on the way to whoever types it.
+router.post('/users/:id/password', async (req, res) => {
+  const supplied = req.body?.password;
+  if (supplied !== undefined && String(supplied).length < 8) {
+    return res.status(400).json({ error: 'Password must be at least 8 characters' });
+  }
+  const password = supplied ? String(supplied) : randomBytes(9).toString('base64url');
+  const { rows } = await q(
+    'UPDATE users SET password_hash = $1, password_set = true WHERE id = $2 RETURNING id, email, name',
+    [await bcrypt.hash(password, 10), Number(req.params.id)]
+  );
+  if (!rows.length) return res.status(404).json({ error: 'User not found' });
+  await logActivity(req.user.id, 'password_reset', `${req.user.name} reset the password for ${rows[0].name}`);
+  // Returned once, to the admin who asked: it is not stored anywhere in readable form.
+  res.json({ user: rows[0], password });
 });
 
 router.get('/requests', async (_req, res) => {

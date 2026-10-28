@@ -43,18 +43,24 @@ router.post('/login', async (req, res) => {
   const address = normalizeEmail(email);
   if (!isSingleAddress(address)) return res.status(400).json({ error: 'Enter one email address' });
 
-  // ORDER BY id LIMIT 1: where two rows do share one address — an owner locked out by those
-  // characters registered again, which the old register allowed — sign-in reproducibly lands
-  // on the older account, the one holding the stations, rather than on whichever row comes
-  // back first.
+  // Where two rows do share one address — an owner locked out by those characters registered
+  // again, which the old register allowed — the password decides which one this is, oldest
+  // row first so the account holding the stations wins when both match. Reading only the
+  // oldest row left an owner whose password belongs to the newer one refused with "Incorrect
+  // email or password" whatever they typed, with nothing on screen to say why.
   const { rows } = await q(
-    'SELECT id, email, name, role, tier, avatar_url, password_hash, password_set FROM users WHERE lower(email) = lower($1) ORDER BY id LIMIT 1',
+    'SELECT id, email, name, role, tier, avatar_url, password_hash, password_set FROM users WHERE lower(email) = lower($1) ORDER BY id',
     [address]
   );
-  if (!rows.length || !(await bcrypt.compare(String(password), rows[0].password_hash))) {
-    return res.status(401).json({ error: 'Incorrect email or password' });
+  let match = null;
+  for (const row of rows) {
+    if (await bcrypt.compare(String(password), row.password_hash)) {
+      match = row;
+      break;
+    }
   }
-  const user = publicUser(rows[0]);
+  if (!match) return res.status(401).json({ error: 'Incorrect email or password' });
+  const user = publicUser(match);
   await logActivity(user.id, 'signin', `${user.name} signed in`);
   res.json({ token: signToken(user), user });
 });

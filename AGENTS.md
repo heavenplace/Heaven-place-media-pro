@@ -169,9 +169,27 @@ the secrets hold.
   address nobody can sign in with. The web form's own `type="email"` validation rejects a
   marked address before it is ever posted, so a mark reaches the API from the native apps,
   whose address fields are plain text.
-- Sign-in takes the oldest matching row (`ORDER BY id LIMIT 1`): where two rows do carry one
-  address — an owner locked out by those characters registered again, which register used to
-  allow — the account that signs in is the older one, the one holding the stations.
+- **Sign-in matches the password against every row that carries the address, oldest first.**
+  `users.email` is `UNIQUE` **as typed**, so two rows can carry one address when they differ
+  only by case — or by one of the invisible characters, on a row stored before they were
+  stripped — and sign-in's `lower(email)` lookup matches both. The password decides which
+  account this is, and the older row still wins when both match (that is the one holding the
+  stations). Comparing only the oldest row refused an owner whose password belonged to the
+  other one with "Incorrect email or password" for good, however often they retried; register
+  no longer creates a second row (it checks `lower(email)`), so this is what a legacy pair
+  still needs.
+- **The control room can issue a new password for any account**
+  (`POST /api/admin/users/:id/password`, the Users tab's "New password"), which is the
+  listener's counterpart of re-uploading `ADMIN_PASSWORD` and the only way back in for an
+  owner who has forgotten theirs: no mail provider is configured, so `/forgot-password` sends
+  no link — it tells them to ask the control room. The route sets the hash, sets
+  `password_set = true` (so a Google-created account becomes one the native apps can sign in
+  with), logs `password_reset` to the activity feed, and returns the password **once** for
+  the admin to pass on; it is not stored in readable form. It generates `base64url`
+  (letters, digits, `-`, `_`) unless the admin supplies one, so nothing gets mangled on the
+  way to whoever types it. The owner changes it at `/account` once in. An admin resetting
+  their own password this way does not disturb the `ADMIN_PASSWORD` fingerprint, so the same
+  secret is not re-applied over it on the next boot.
 
 Everyone else registers from `/register`. Access levels: a listener account can own
 stations and use the studio (`/studio`, which only ever shows its own stations); `/admin`
