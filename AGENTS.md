@@ -127,15 +127,22 @@ the secrets hold.
 - On start, `ensureAdmin()` (`api/db.js`) creates that address as `role = 'admin'`,
   `tier = 'premium'`, with `ADMIN_PASSWORD` as its password.
 - If the address **already exists** — someone registered it as a listener, or signed in
-  with Google — it is promoted to `admin`, and its password is replaced with
-  `ADMIN_PASSWORD` whenever the stored hash no longer verifies it (`password_set` becomes
-  true at the same time). A Google-created account has no password its owner knows; this is
-  what gives it one, which is what the Android apps need (they sign in with email + password
-  only).
-- That is also the way back in: upload a new `ADMIN_PASSWORD` and the recreated api service
-  sets it on the next boot, so a control room locked out of its own account recovers that
-  way. Changing the password from `/account` is undone at the next boot — for this one
-  account the secret is authoritative.
+  with Google — it is promoted to `admin`, and its password is replaced when the account has
+  no usable password (`password_set = false`, which a Google-created account has: this is
+  what gives it one, and what the Android apps need since they sign in with email + password
+  only) or when `ADMIN_PASSWORD` holds a **new** value.
+- **`ADMIN_PASSWORD` is applied when it changes, not on every boot.** `ensureAdmin()` keeps a
+  SHA-256 fingerprint of the value it last applied in `app_settings`
+  (`admin_password_fingerprint`), so a restart with the same secret leaves the account alone.
+  That is deliberate: the control room changes its own password at `/account`, and the api
+  service restarts on every source edit (`node --watch`) and every recreate — comparing the
+  hash with `ADMIN_PASSWORD` on each boot put the secret back and locked the owner out with
+  the password they had just chosen. Boot with the same value logs
+  `control-room password left as it is`.
+- **The way back in is a *different* `ADMIN_PASSWORD`**: upload a new one and the recreated
+  api service sets it on the next boot. Re-uploading the value that is already stored does
+  nothing (same fingerprint) — and it does not need to, because that value is the password
+  the account verifies unless someone changed it at `/account`.
 - **Never put a `$` in `ADMIN_PASSWORD`.** The platform writes the value double-quoted
   into `/run/base44/app.env` and compose interpolates the contents on the way in, so `$$`
   reaches the process as a single `$` and `$name` as nothing at all: the account ends up

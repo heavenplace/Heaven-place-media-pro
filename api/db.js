@@ -1,5 +1,6 @@
 import pg from 'pg';
 import bcrypt from 'bcryptjs';
+import { createHash } from 'node:crypto';
 
 const { Pool } = pg;
 
@@ -225,6 +226,16 @@ CREATE TABLE IF NOT EXISTS payout_accounts (
   note text,
   updated_at timestamptz NOT NULL DEFAULT now()
 );
+
+-- The server's own bookkeeping: nothing a user reads or writes. It holds the fingerprint
+-- (a SHA-256, never the secret) of the ADMIN_PASSWORD last applied to the control-room
+-- account, so a restart can tell "the dashboard holds a new password" from "the same one
+-- as last boot" — see ensureAdmin().
+CREATE TABLE IF NOT EXISTS app_settings (
+  key text PRIMARY KEY,
+  value text,
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
 `;
 
 // Columns added after the first release. ADD COLUMN IF NOT EXISTS keeps this idempotent,
@@ -305,17 +316,38 @@ export async function ensureAdmin() {
   // already registered as an ordinary listener — or signed in with Google, which stores an
   // unguessable hash — it is promoted here.
   if (rows[0].role !== 'admin') await q("UPDATE users SET role = 'admin' WHERE id = $1", [rows[0].id]);
-  // ADMIN_PASSWORD is this account's password. A new value uploaded to the dashboard has to
-  // reach the account (the platform recreates the service; this runs on boot), and an
-  // address that already existed carries a hash its owner may not know — a Google sign-up
-  // has no usable password at all. Without this the control room can lock itself out for
-  // good, because the app has no password-reset route.
-  if (!rows[0].password_set || !(await bcrypt.compare(password, rows[0].password_hash))) {
+  // ADMIN_PASSWORD is this account's password, but it is applied when the secret is NEW —
+  // not on every boot. The account can change its own password at /account, and the api
+  // service restarts on every source edit (node --watch) and every recreate: comparing the
+  // stored hash with ADMIN_PASSWORD on each boot silently put the secret back and locked
+  // the owner out with the password they had just set, refused with "Incorrect email or
+  // password" and nothing on screen to say why. A fingerprint of the last applied value
+  // tells the two cases apart; a changed secret (or an account with no usable password —
+  // a Google sign-up carries an unguessable hash) still resets it, which is how a control
+  // room that has lost its password gets back in: upload a new ADMIN_PASSWORD.
+  const fingerprint = createHash('sha256').update(password).digest('hex');
+  const { rows: applied } = await q("SELECT value FROM app_settings WHERE key = 'admin_password_fingerprint'");
+  const previous = applied[0]?.value ?? null;
+  const secretChanged = previous !== null && previous !== fingerprint;
+
+  if (!rows[0].password_set || secretChanged) {
     await q('UPDATE users SET password_hash = $1, password_set = true WHERE id = $2', [
       await bcrypt.hash(password, 10),
       rows[0].id
     ]);
     console.log('[api] control-room password taken from ADMIN_PASSWORD');
+  } else if (previous === null) {
+    // First boot of a database that predates this row: record what the account currently
+    // verifies, so the owner's own password is not overwritten just to start tracking it.
+    console.log('[api] control-room password left as it is (ADMIN_PASSWORD unchanged)');
+  }
+
+  if (previous !== fingerprint) {
+    await q(
+      `INSERT INTO app_settings (key, value) VALUES ('admin_password_fingerprint', $1)
+       ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now()`,
+      [fingerprint]
+    );
   }
 }
 
