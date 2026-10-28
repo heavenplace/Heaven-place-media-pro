@@ -1,0 +1,82 @@
+import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import { api, getToken, setToken } from './api.js';
+
+const AuthContext = createContext(null);
+
+export function AuthProvider({ children }) {
+  const [user, setUser] = useState(null);
+  const [ready, setReady] = useState(false);
+
+  useEffect(() => {
+    if (!getToken()) {
+      setReady(true);
+      return;
+    }
+    api('/auth/me')
+      .then((data) => setUser(data.user))
+      .catch(() => {
+        setToken(null);
+        setUser(null);
+      })
+      .finally(() => setReady(true));
+  }, []);
+
+  const login = useCallback(async (email, password) => {
+    const data = await api('/auth/login', { method: 'POST', body: { email, password } });
+    setToken(data.token);
+    setUser(data.user);
+    return data.user;
+  }, []);
+
+  const register = useCallback(async (name, email, password) => {
+    const data = await api('/auth/register', { method: 'POST', body: { name, email, password } });
+    setToken(data.token);
+    setUser(data.user);
+    return data.user;
+  }, []);
+
+  const loginWithGoogle = useCallback(async (credential) => {
+    const data = await api('/auth/google', { method: 'POST', body: { credential } });
+    setToken(data.token);
+    setUser(data.user);
+    return data.user;
+  }, []);
+
+  // Set or change the password on the signed-in account. An account created with Google
+  // starts without one, so it is asked for the current password only once one is set —
+  // this is how a Google account gets a password it can sign into the Android apps with.
+  const setPassword = useCallback(async (password, currentPassword) => {
+    const data = await api('/auth/password', {
+      method: 'POST',
+      body: { password, ...(currentPassword ? { current_password: currentPassword } : {}) }
+    });
+    setUser(data.user);
+    return data.user;
+  }, []);
+
+  // Re-reads the signed-in user — used after a purchase changes their tier.
+  const refresh = useCallback(async () => {
+    if (!getToken()) return null;
+    const data = await api('/auth/me');
+    setUser(data.user);
+    return data.user;
+  }, []);
+
+  const logout = useCallback(() => {
+    setToken(null);
+    setUser(null);
+  }, []);
+
+  const value = useMemo(
+    () => ({ user, ready, login, register, loginWithGoogle, setPassword, refresh, logout, isAdmin: user?.role === 'admin' }),
+    [user, ready, login, register, loginWithGoogle, setPassword, refresh, logout]
+  );
+
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
+}
+
+export const useAuth = () => {
+  const context = useContext(AuthContext);
+  if (!context) throw new Error('useAuth must be used inside AuthProvider');
+  return context;
+};

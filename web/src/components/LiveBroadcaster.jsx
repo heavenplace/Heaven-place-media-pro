@@ -1,0 +1,440 @@
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { api, getToken } from '../api.js';
+import { QUALITY, WINDOWS, stationQuality, stationWindow, rememberStreamSettings } from '../liveSettings.js';
+
+const MIME_CANDIDATES = {
+  video: [
+    'video/webm;codecs=vp9,opus',
+    'video/webm;codecs=vp8,opus',
+    'video/webm',
+    // Safari — iOS above all — records MP4 rather than WebM, and only names the codecs it
+    // can actually produce. Without these, a phone reports no usable type and the browser
+    // picks its own, which is how a broadcast ended up saved as a file a viewer refused.
+    'video/mp4;codecs=avc1.42E01E,mp4a.40.2',
+    'video/mp4'
+  ],
+  audio: ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4;codecs=mp4a.40.2', 'audio/mp4']
+};
+
+/**
+ * End the session from the way out. `keepalive` lets the request survive the page being
+ * unloaded, so a broadcast the owner never stopped by hand is still archived.
+ */
+function endSessionOnExit(sessionId) {
+  const token = getToken();
+  fetch(`/api/live/${sessionId}/end`, {
+    method: 'POST',
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+    keepalive: true
+  }).catch(() => {});
+}
+
+const pickMime = (audioOnly) =>
+  (audioOnly ? MIME_CANDIDATES.audio : MIME_CANDIDATES.video).find(
+    (type) => typeof window.MediaRecorder?.isTypeSupported === 'function' && window.MediaRecorder.isTypeSupported(type)
+  ) || '';
+
+/** Canvas capture, under the prefixed name some mobile browsers still ship. */
+const captureCanvas = (canvas, fps) =>
+  (canvas.captureStream || canvas.webkitCaptureStream)?.call(canvas, fps) || null;
+
+/**
+ * Keep the screen awake while broadcasting. A phone that dims, locks or backgrounds stops
+ * drawing the canvas, and a frozen canvas is a frozen broadcast — the wake lock is what
+ * keeps a phone broadcast running when the owner leaves it alone. Best-effort: a browser
+ * may refuse it, and it is dropped by the page's own visibility rules.
+ */
+async function acquireWakeLock() {
+  try {
+    return (await navigator.wakeLock?.request('screen')) || null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Broadcast live from this phone to a station. The camera is drawn onto a canvas and the
+ * canvas is what gets streamed, so switching between the front and back camera — or the
+ * quality preset — keeps one continuous broadcast instead of restarting it.
+ *
+ * The phone is the source: it uploads two-second slices to POST /api/live/:id/chunk and
+ * listeners follow along through GET /api/live/:id/manifest.
+ */
+export default function LiveBroadcaster({ station, onStarted, onEnded, notify, fail }) {
+  const previewRef = useRef(null);
+  const canvasRef = useRef(null);
+  const micRef = useRef(null);
+  const camRef = useRef(null);
+  const canvasStreamRef = useRef(null);
+  const recorderRef = useRef(null);
+  const queueRef = useRef(Promise.resolve());
+  const sessionRef = useRef(null);
+  const rafRef = useRef(0);
+  const wakeLockRef = useRef(null);
+
+  const [facing, setFacing] = useState('environment');
+  // A station goes live with the settings it was last set up with, whether the owner or the
+  // control room picked them — and whether that was on the web or on a phone.
+  const [quality, setQuality] = useState(() => stationQuality(station));
+  const [title, setTitle] = useState('');
+  const [duration, setDuration] = useState(() => stationWindow(station));
+  const [previewing, setPreviewing] = useState(false);
+  const [live, setLive] = useState(false);
+  const [permanent, setPermanent] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const [stats, setStats] = useState(null);
+  const [online, setOnline] = useState(1);
+
+  // Moving to another station must not carry the previous station's settings into this
+  // station's go-live form.
+  useEffect(() => {
+    setQuality(stationQuality(station));
+    setDuration(stationWindow(station));
+  }, [station.id, station.stream_quality, station.stream_window]);
+
+  const preset = QUALITY[quality] || QUALITY['1080p'];
+  const audioOnly = Boolean(preset.audioOnly);
+
+  const paint = useCallback(() => {
+    const canvas = canvasRef.current;
+    const video = previewRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    const vw = video?.videoWidth || 0;
+    const vh = video?.videoHeight || 0;
+    if (vw && vh) {
+      const scale = Math.max(canvas.width / vw, canvas.height / vh);
+      const w = vw * scale;
+      const h = vh * scale;
+      ctx.drawImage(video, (canvas.width - w) / 2, (canvas.height - h) / 2, w, h);
+    } else {
+      ctx.fillStyle = '#0b0d12';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+    }
+    rafRef.current = requestAnimationFrame(paint);
+  }, []);
+
+  const stopTracks = (ref) => {
+    ref.current?.getTracks().forEach((track) => track.stop());
+    ref.current = null;
+  };
+
+  const stopAll = useCallback(() => {
+    cancelAnimationFrame(rafRef.current);
+    rafRef.current = 0;
+    stopTracks(camRef);
+    stopTracks(micRef);
+    canvasStreamRef.current = null;
+    try {
+      wakeLockRef.current?.release();
+    } catch {
+      /* the browser already dropped it */
+    }
+    wakeLockRef.current = null;
+    setPreviewing(false);
+  }, []);
+
+  useEffect(() => {
+    const endOnExit = () => {
+      const session = sessionRef.current;
+      if (session) endSessionOnExit(session.id);
+    };
+    // A closed tab, a phone going to sleep or a reload: the broadcast is ended on the way
+    // out (below), so what the phone recorded is still archived on the station as a Relive
+    // item. A phone that puts this page in the background stops drawing the canvas, so the
+    // picture a listener sees freezes even though the microphone keeps recording — say so,
+    // and take the wake lock back when the owner returns to the screen.
+    const onVisibility = () => {
+      if (!sessionRef.current) return;
+      if (document.hidden) {
+        setError('The broadcast picture stops while this tab is in the background — keep this screen open and in front, and the phone unlocked.');
+      } else if (!wakeLockRef.current) {
+        acquireWakeLock().then((lock) => {
+          wakeLockRef.current = lock;
+        });
+      }
+    };
+    document.addEventListener('visibilitychange', onVisibility);
+    window.addEventListener('pagehide', endOnExit);
+    return () => {
+      document.removeEventListener('visibilitychange', onVisibility);
+      window.removeEventListener('pagehide', endOnExit);
+      if (recorderRef.current?.state === 'recording') recorderRef.current.stop();
+      endOnExit();
+      stopAll();
+    };
+  }, [stopAll]);
+
+  // Opens (or re-opens) the camera — used on start, on "switch camera" and on a
+  // quality change. The microphone is only opened once, so switching the camera does
+  // not interrupt the audio half of the broadcast.
+  async function openSource(nextFacing = facing, nextQuality = quality, { mic = true } = {}) {
+    const target = QUALITY[nextQuality] || QUALITY['1080p'];
+    setError('');
+    try {
+      if (!target.audioOnly) {
+        stopTracks(camRef);
+        camRef.current = await navigator.mediaDevices.getUserMedia({
+          audio: false,
+          video: { facingMode: { ideal: nextFacing }, width: { ideal: target.size[0] }, height: { ideal: target.size[1] }, frameRate: { ideal: target.frameRate } }
+        });
+        const canvas = canvasRef.current;
+        if (canvas) {
+          canvas.width = target.size[0];
+          canvas.height = target.size[1];
+        }
+        if (previewRef.current) {
+          previewRef.current.srcObject = camRef.current;
+          previewRef.current.muted = true;
+          await previewRef.current.play().catch(() => {});
+        }
+        if (!rafRef.current) rafRef.current = requestAnimationFrame(paint);
+      } else {
+        stopTracks(camRef);
+        cancelAnimationFrame(rafRef.current);
+        rafRef.current = 0;
+      }
+      if (mic && !micRef.current) {
+        micRef.current = await navigator.mediaDevices.getUserMedia({
+          audio: { echoCancellation: true, noiseSuppression: true, channelCount: 2 }
+        });
+      }
+      setPreviewing(true);
+      return true;
+    } catch (err) {
+      setError(`Could not reach the ${target.audioOnly ? 'microphone' : 'camera'}: ${err.message}`);
+      return false;
+    }
+  }
+
+  // The stream we actually broadcast: the canvas (so camera switches are seamless)
+  // plus the microphone.
+  function broadcastStream(target = preset) {
+    const tracks = [];
+    if (!target.audioOnly && canvasRef.current) {
+      if (!canvasStreamRef.current) canvasStreamRef.current = captureCanvas(canvasRef.current, target.frameRate);
+      if (canvasStreamRef.current) tracks.push(...canvasStreamRef.current.getVideoTracks());
+    }
+    if (micRef.current) tracks.push(...micRef.current.getAudioTracks());
+    return new MediaStream(tracks);
+  }
+
+  function queueChunk(sessionId, blob) {
+    // Each slice is appended to the one growing file a listener follows, so a slice lost to
+    // a momentary drop on a phone connection leaves a hole in everyone's stream. One retry
+    // rides out the blip; the next slice carries on regardless.
+    const send = (attempt) =>
+      api(`/live/${sessionId}/chunk`, { method: 'POST', body: blob, raw: true }).catch((err) => {
+        if (attempt === 0) return send(1);
+        throw err;
+      });
+
+    queueRef.current = queueRef.current
+      .then(() => send(0))
+      .then((info) => setStats({ chunks: info.chunk_count, mb: (info.bytes / 1048576).toFixed(1) }))
+      .catch((err) => setError(`Broadcast interrupted: ${err.message}. Check your connection.`));
+  }
+
+  // A recorder started before the camera has produced its first frame streams an empty
+  // canvas: the file opens on a black picture, and a device that never delivers a frame
+  // records no video track at all — a broadcast nobody can watch. Wait for the picture.
+  const waitForFirstFrame = async (timeoutMs = 6000) => {
+    const video = previewRef.current;
+    const deadline = Date.now() + timeoutMs;
+    while (video && !video.videoWidth && Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, 150));
+    }
+    return Boolean(video && video.videoWidth);
+  };
+
+  const start = async () => {
+    setBusy(true);
+    setError('');
+    fail?.('');
+    try {
+      const ready = previewing || (await openSource());
+      if (!ready) return;
+      if (!window.MediaRecorder) return setError('This browser cannot record from the camera.');
+      if (!audioOnly && !(await waitForFirstFrame())) {
+        return setError('The camera has not sent a picture, so your viewers would see nothing. Check that the stage above shows the scene, then try again.');
+      }
+
+      const stream = broadcastStream();
+      if (!stream.getTracks().length) {
+        return setError(audioOnly ? 'No microphone is available to broadcast.' : 'No camera picture is available to broadcast.');
+      }
+
+      const preferred = pickMime(audioOnly);
+      // Built before the session so the type can be read back off the recorder: a browser
+      // that supports none of the listed types still records something, and the session —
+      // and so every listener — must be told what that file really is.
+      const recorder = new MediaRecorder(stream, {
+        ...(preferred ? { mimeType: preferred } : {}),
+        videoBitsPerSecond: preset.videoBitsPerSecond,
+        audioBitsPerSecond: preset.audioBitsPerSecond
+      });
+      const mime = recorder.mimeType || preferred || (audioOnly ? 'audio/webm' : 'video/webm');
+
+      const { session } = await api('/live', {
+        method: 'POST',
+        body: {
+          station_id: station.id,
+          title: title.trim() || `${station.name} live`,
+          kind: audioOnly ? 'audio' : 'video',
+          mime,
+          ...(duration === 'permanent' ? { permanent: true } : { hours: Number(duration) })
+        }
+      });
+      sessionRef.current = session;
+
+      recorder.ondataavailable = (event) => event.data?.size && queueChunk(session.id, event.data);
+      recorderRef.current = recorder;
+      recorder.start(2000);
+      // Hold the screen awake for the length of the broadcast.
+      wakeLockRef.current = await acquireWakeLock();
+
+      setLive(true);
+      setPermanent(Boolean(session.permanent));
+      setOnline(1);
+      onStarted?.(session);
+      notify?.(`You are live on ${station.name}. Keep this screen open while you broadcast.`);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const stop = async () => {
+    const session = sessionRef.current;
+    setBusy(true);
+    try {
+      if (recorderRef.current?.state === 'recording') {
+        await new Promise((resolve) => {
+          recorderRef.current.onstop = resolve;
+          recorderRef.current.stop();
+        });
+      }
+      await queueRef.current.catch(() => {});
+      if (session) await api(`/live/${session.id}/end`, { method: 'POST' });
+      notify?.('You are off air — the broadcast is saved on the station as a Relive item.');
+      onEnded?.();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      recorderRef.current = null;
+      sessionRef.current = null;
+      setLive(false);
+      setPermanent(false);
+      setStats(null);
+      stopAll();
+      setBusy(false);
+    }
+  };
+
+  const switchCamera = async () => {
+    const next = facing === 'environment' ? 'user' : 'environment';
+    setFacing(next);
+    if (!audioOnly) await openSource(next, quality, { mic: false });
+  };
+
+  const changeQuality = async (next) => {
+    setQuality(next);
+    rememberStreamSettings(station.id, { quality: next });
+    if (previewing && !live) await openSource(facing, next);
+  };
+
+  const changeDuration = (next) => {
+    setDuration(next);
+    rememberStreamSettings(station.id, { window: next });
+  };
+
+  return (
+    <section className="panel stack" style={{ gap: 12 }}>
+      <div className="between">
+        <h3>Go live from this phone</h3>
+        {live ? (
+          <span className="badge badge-live"><span className="badge-pulse" /> {permanent ? 'On air 24/7' : 'On air'}</span>
+        ) : (
+          <span className="badge">Camera idle</span>
+        )}
+      </div>
+      <p className="muted small" style={{ margin: 0 }}>
+        Broadcast straight from this device — it is the source. Switch between the front and
+        back camera while you are live, and choose how long the window runs.
+      </p>
+
+      <div className="live-stage">
+        {/* The stage is the broadcast canvas itself rather than the raw camera: what the
+            owner watches here is the exact picture going out to every viewer. */}
+        <canvas ref={canvasRef} className="live-canvas" aria-hidden="true" />
+        {/* Only the canvas's drawing source, so it stays laid out but out of sight. */}
+        <video ref={previewRef} className="live-source" playsInline muted />
+        {(!previewing || audioOnly) && (
+          <div className="live-placeholder">
+            {audioOnly ? '🎙️ Audio only — the microphone is the source' : 'Camera is off — start it below'}
+          </div>
+        )}
+      </div>
+      {previewing && !audioOnly && (
+        <p className="tiny muted" style={{ margin: 0 }}>
+          {live ? 'You are looking at what your viewers see right now.' : 'This is the picture your viewers will see.'}
+        </p>
+      )}
+
+      <div className="row">
+        <div className="grow">
+          <label>Live title</label>
+          <input value={title} onChange={(event) => setTitle(event.target.value)} placeholder={`${station.name} live`} disabled={live} />
+        </div>
+        <div style={{ minWidth: 190 }}>
+          <label>How long</label>
+          <select value={duration} onChange={(event) => changeDuration(event.target.value)} disabled={live}>
+            {WINDOWS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+          </select>
+        </div>
+        <div style={{ minWidth: 210 }}>
+          <label>Quality</label>
+          <select value={quality} onChange={(event) => changeQuality(event.target.value)} disabled={live}>
+            {Object.entries(QUALITY).map(([value, item]) => <option key={value} value={value}>{item.label}</option>)}
+          </select>
+        </div>
+      </div>
+
+      <div className="row">
+        {!previewing && (
+          <button type="button" className="btn" onClick={() => openSource()} disabled={busy || live}>
+            Start {audioOnly ? 'microphone' : 'camera'}
+          </button>
+        )}
+        {previewing && !audioOnly && (
+          <button type="button" className="btn" onClick={switchCamera} disabled={busy}>
+            Switch to {facing === 'environment' ? 'front' : 'back'} camera
+          </button>
+        )}
+        {!live ? (
+          <button type="button" className="btn btn-primary" onClick={start} disabled={busy}>
+            {busy ? <span className="spinner" /> : duration === 'permanent' ? 'Go live 24/7' : 'Go live'}
+          </button>
+        ) : (
+          <button type="button" className="btn btn-danger" onClick={stop} disabled={busy}>
+            {busy ? <span className="spinner" /> : 'End broadcast'}
+          </button>
+        )}
+        {live && stats && (
+          <span className="tiny muted">
+            {stats.chunks} slices sent · {stats.mb} MB · {preset.label}
+          </span>
+        )}
+      </div>
+
+      {error && <div className="notice notice-error small">{error}</div>}
+      <p className="tiny muted" style={{ margin: 0 }}>
+        Keep this screen open and the phone awake while broadcasting — the browser stops
+        capturing when the tab is in the background. The recording is kept and appears as a
+        Relive item when you end.
+      </p>
+    </section>
+  );
+}

@@ -1,0 +1,27 @@
+#cloud-config
+#
+# Optional. At instance creation: Compute -> Instances -> Create instance ->
+# Show advanced options -> Management -> Cloud-init script -> paste this file.
+#
+# It only installs Docker (with the compose plugin) and git, so the tools are there when
+# you first log in. The ports and the app itself come after, from the repository:
+#
+#   git clone https://github.com/heavenplace/Heaven-place-media-pro streamcast-pro
+#   cd streamcast-pro
+#   sudo ./deploy/oracle/vm-setup.sh     # host firewall, swap, docker if missing
+#   ./deploy/deploy.sh
+#
+# See deploy/oracle/README.md — including the VCN security-list rules, which are in the
+# console and cannot be done from here.
+package_update: true
+packages:
+  - git
+  - ca-certificates
+  - curl
+runcmd:
+  - curl -fsSL https://get.docker.com | sh
+  - systemctl enable --now docker
+  # The login on an Ubuntu image is `ubuntu`, on an Oracle Linux image `opc`; whichever it
+  # is, it is uid 1000 and gets docker access.
+  - >-
+    u=$(getent passwd 1000 | cut -d: -f1); [ -n "$u" ] && usermod -aG docker "$u" || true

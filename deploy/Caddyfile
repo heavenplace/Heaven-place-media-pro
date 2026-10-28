@@ -1,0 +1,37 @@
+# One origin for the site, the API and the media.
+#
+# SITE_ADDRESS is your subdomain, e.g. streamcast.example.com. Caddy then obtains and
+# renews a Let's Encrypt certificate for exactly that name — which is why the web service
+# publishes ports 80 and 443 and why the DNS record has to point here first. Set it to
+# `:80` to serve plain HTTP, with no certificate at all.
+{$SITE_ADDRESS:http://localhost} {
+	encode gzip zstd
+
+	# The API — and the uploads it serves — live in the api container, not in this image.
+	handle /api/* {
+		reverse_proxy {$API_UPSTREAM:api:8000}
+	}
+	handle /uploads/* {
+		reverse_proxy {$API_UPSTREAM:api:8000}
+	}
+
+	# An .apk is a zip inside, so a phone that is not told otherwise can save the download
+	# as a .zip instead of installing it — mark it as an attachment, exactly as the dev
+	# server does (web/vite.config.js).
+	@apk path /downloads/*.apk
+	header @apk Content-Disposition attachment
+
+	# Everything else is the built site. The app uses real paths (react-router, not a
+	# hash router), so a path that is not a file must return index.html rather than a 404.
+	handle {
+		root * /srv
+		try_files {path} /index.html
+		file_server
+	}
+}
+
+# Readiness probe for the compose healthcheck. Never published: it only answers inside
+# the compose network, and it is independent of SITE_ADDRESS so it works over http or https.
+:8081 {
+	respond /health 200
+}

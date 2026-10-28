@@ -1,0 +1,10 @@
+# Build context for the production web image (deploy/web.Dockerfile), whose context is
+# the repository root. The dev stack never uses this file — it bind-mounts the source.
+.git
+**/node_modules
+mobile
+uploads
+*.log
+.env
+.env.*
+.base44

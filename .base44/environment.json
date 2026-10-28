@@ -1,0 +1,58 @@
+{
+  "previewPort": 3000,
+  "healthPath": "/",
+  "startCommand": "docker compose -f docker-compose.base44.yml up -d",
+  "secrets": [
+    {
+      "name": "JWT_SECRET",
+      "description": "Signs listener and admin login sessions. Any long random string; Base44 stores it encrypted and it never reaches the repo.",
+      "requiredAtBoot": true,
+      "generatedForDevelopment": true
+    },
+    {
+      "name": "GOOGLE_CLIENT_ID",
+      "description": "Google Cloud Console → APIs & Services → Credentials → OAuth client ID (type: Web application). Paste the client ID and add the app's origin under 'Authorized JavaScript origins'. Switches on the 'Sign in with Google' button; the API verifies the token with the same id.",
+      "requiredAtBoot": false
+    },
+    {
+      "name": "STRIPE_SECRET_KEY",
+      "description": "Stripe Dashboard → Developers → API keys → Secret key (sk_test_… while testing). Switches on card checkout for Premium memberships and paid downloads.",
+      "requiredAtBoot": false
+    },
+    {
+      "name": "STRIPE_WEBHOOK_SECRET",
+      "description": "Stripe Dashboard → Developers → Webhooks → add endpoint <api origin>/api/payments/webhook for checkout.session.completed, then copy its signing secret (whsec_…). Optional: the back-from-checkout confirmation already grants access, this is the authoritative path for a real deployment.",
+      "requiredAtBoot": false
+    },
+    {
+      "name": "PRCPAY_API_KEY",
+      "description": "PrcPay merchant API key from your PrcPay dashboard; sent as 'Authorization: Bearer <key>'. Switches on PrcPay — instant pay-ins by PrcPay card and instant payouts to owners' PrcPay accounts.",
+      "requiredAtBoot": false
+    },
+    {
+      "name": "PRCPAY_BASE_URL",
+      "description": "The PrcPay API host the server should call, e.g. https://api.prcpay.com or the public URL of your own PrcPay server — it must be reachable from the app's server, not just from your browser. Left unset, the sandbox uses the local stand-in at http://prcpay:3001/api (docker-compose.base44.yml + prcpay-dev/). Endpoint paths are configurable too: PRCPAY_CHARGE_PATH and PRCPAY_TRANSFER_PATH (defaults /charge and /transfer), e.g. /api/charge behind a base that ends in /api.",
+      "requiredAtBoot": false
+    },
+    {
+      "name": "PRCPAY_ACCOUNT",
+      "description": "This platform's own PrcPay account, sent to PrcPay as 'merchant'. Defaults to streamcastpro — set it if your PrcPay merchant account is named differently.",
+      "requiredAtBoot": false
+    },
+    {
+      "name": "PRCPAY_WEBHOOK_IPS",
+      "description": "Comma-separated source addresses PrcPay's settlement notifications come from. Notifications carry no signature, so this allowlist is the whole check — without it POST /api/prcpay/webhook refuses every caller (403).",
+      "requiredAtBoot": false
+    },
+    {
+      "name": "ADMIN_EMAIL",
+      "description": "The address you sign in to the control room with. An address already in the app (a listener registration or a Google sign-up) is promoted to admin; a new one is created on boot. Left unset, the app falls back to admin@streamcast.pro.",
+      "requiredAtBoot": false
+    },
+    {
+      "name": "ADMIN_PASSWORD",
+      "description": "The control-room password — the sign-in form wants at least 8 characters. Upload a value you know: on boot the control-room account's password is set to what is stored here, which is also the way back in if that password is lost (the app has no password-reset route). Do not use the '$' character: a dollar sign is mangled on its way from here into the app, so the account would receive a password that is not the one you typed (letters, digits and punctuation such as ! - _ # are safe). Left unset, the app falls back to control-room.",
+      "requiredAtBoot": false
+    }
+  ]
+}
